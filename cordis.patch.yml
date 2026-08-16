@@ -1,0 +1,5 @@
+# dsh-mcp-manager bundle：向组合挂 MCP 管理面板（Node half 读写 profile
+# cordis.patch.yml 的 mcp-client insert 行；client half 注册「MCP」设置面板）。
+- insert:
+    - id: dsh-mcp-manager
+      name: '@huanlin/dsh-plugin-mcp-manager'

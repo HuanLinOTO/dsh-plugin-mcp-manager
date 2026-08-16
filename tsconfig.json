@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
+    "types": ["node"]
+  },
+  "include": ["src", "tests"],
+  "exclude": ["src/client"]
+}
