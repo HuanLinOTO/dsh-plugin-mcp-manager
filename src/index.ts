@@ -8,6 +8,11 @@
  * 的 profile 用户 patch 层。经 webServer 提供 `/api/mcp-manager` 路由供浏览器
  * 面板调用；经 ctx.tools 注册 mcp_* 管理工具供 agent 调用。
  *
+ * 禁用语义（与删除分离）：entry-level `disabled: true` 字段（与 id/name/config
+ * 同级）使 loader 跳过挂载 mcp-client 实例 → 工具不注册（模型不可见），config
+ * 保留在 patch 文件中。PATCH /servers/<id> 路由 + mcp_server_set_enabled 工具
+ * 写该字段；启用时移除该字段，loader HMR 重新挂载实例。
+ *
  * 架构（对齐开发计划 §1）：
  *   GUI(settings.section) ──HTTP──> /api/mcp-manager ──读写──> profile cordis.patch.yml
  *   Agent 面 mcp_* 工具 ─────────────────────────────┘        (mcp-client insert 行)
@@ -22,6 +27,7 @@ import {
   addServer,
   updateServer,
   deleteServer,
+  setServerDisabled,
   resolveLoadOverlayPatches,
   RegistryError,
   type McpServerConfig,
@@ -73,12 +79,14 @@ function readBody(req: unknown): Promise<string> {
  */
 const CONNECTING_GRACE_MS = 30_000
 
-/** 计算一个服务器的三态状态。 */
+/** 计算一个服务器的四态状态。 */
 function computeStatus(
   toolCount: number,
   serverName: string,
   connectingSince: Map<string, number>,
-): 'connected' | 'connecting' | 'disconnected' {
+  disabled: boolean,
+): 'connected' | 'connecting' | 'disconnected' | 'disabled' {
+  if (disabled) return 'disabled'
   if (toolCount > 0) return 'connected'
   const since = connectingSince.get(serverName)
   if (since !== undefined && Date.now() - since < CONNECTING_GRACE_MS) return 'connecting'
@@ -103,6 +111,11 @@ export function apply(ctx: ManagerCtx): void {
       connectingSince.set(serverName, Date.now())
     }
 
+    /** 清除连接中标记（禁用时调用——不再处于连接中，而是已禁用）。 */
+    const clearConnecting = (serverName: string): void => {
+      connectingSince.delete(serverName)
+    }
+
     // AI-native MCP 管理工具（mcp_*）：agent 面 = 面板写同一安装态。
     const mcpTools = createMcpTools({
       listServers,
@@ -116,6 +129,18 @@ export function apply(ctx: ManagerCtx): void {
         markConnecting(config.serverName)
       },
       deleteServer: id => deleteServer(id, { loadOverlayPatches }),
+      setServerDisabled: (id, disabled) => {
+        setServerDisabled(id, disabled, { loadOverlayPatches })
+        // 找到该 id 对应的 serverName 以清理 connecting 标记（禁用→不再连接中）。
+        if (disabled) {
+          const row = listServers().find(r => r.id === id)
+          if (row !== undefined) clearConnecting(row.config.serverName)
+        } else {
+          // 启用：进入「连接中」宽限窗（loader HMR 重新挂载 mcp-client）。
+          const row = listServers().find(r => r.id === id)
+          if (row !== undefined) markConnecting(row.config.serverName)
+        }
+      },
       registeredToolNames: () => (ctx.tools?.schemas() ?? []).map(s => s.name),
       connectingSince,
       selfId: '@huanlin/dsh-plugin-mcp-manager',
@@ -153,7 +178,7 @@ export function apply(ctx: ManagerCtx): void {
             const toolNames = (ctx.tools?.schemas() ?? []).map(s => s.name)
             const servers = listServers().map(row => {
               const prefix = `mcp__${row.config.serverName}__`
-              const toolCount = toolNames.filter(n => n.startsWith(prefix)).length
+              const toolCount = row.disabled ? 0 : toolNames.filter(n => n.startsWith(prefix)).length
               return {
                 id: row.id,
                 serverName: row.config.serverName,
@@ -162,7 +187,8 @@ export function apply(ctx: ManagerCtx): void {
                   ? `${row.config.command ?? ''} ${(row.config.args ?? []).join(' ')}`.trim()
                   : (row.config.url ?? ''),
                 toolCount,
-                status: computeStatus(toolCount, row.config.serverName, connectingSince),
+                disabled: row.disabled,
+                status: computeStatus(toolCount, row.config.serverName, connectingSince, row.disabled),
                 config: row.config,
               }
             })
@@ -197,12 +223,13 @@ export function apply(ctx: ManagerCtx): void {
             const toolNames = (ctx.tools?.schemas() ?? []).map(s => s.name)
             const status = listServers().map(row => {
               const prefix = `mcp__${row.config.serverName}__`
-              const toolCount = toolNames.filter(n => n.startsWith(prefix)).length
+              const toolCount = row.disabled ? 0 : toolNames.filter(n => n.startsWith(prefix)).length
               return {
                 id: row.id,
                 serverName: row.config.serverName,
                 toolCount,
-                status: computeStatus(toolCount, row.config.serverName, connectingSince),
+                disabled: row.disabled,
+                status: computeStatus(toolCount, row.config.serverName, connectingSince, row.disabled),
               }
             })
             jsonRes(200, { ok: true, status })
@@ -236,6 +263,30 @@ export function apply(ctx: ManagerCtx): void {
             updateServer(id, parsed.config, { loadOverlayPatches })
             markConnecting(parsed.config.serverName)
             jsonRes(200, { ok: true, id, live: true, message: `server ${id} config replaced (HMR hot-swap)` })
+            return
+          }
+
+          // PATCH /servers/<id> — 部分更新（目前仅支持 disabled 字段）
+          if (method === 'PATCH' && putMatch !== null) {
+            const id = decodeURIComponent(putMatch[1]!)
+            const body = await readBody(req)
+            const parsed = JSON.parse(body) as { disabled?: boolean }
+            if (parsed.disabled === undefined || typeof parsed.disabled !== 'boolean') {
+              jsonRes(400, { ok: false, message: 'disabled (boolean) is required' })
+              return
+            }
+            const ok = setServerDisabled(id, parsed.disabled, { loadOverlayPatches })
+            if (!ok) {
+              jsonRes(404, { ok: false, message: `server "${id}" not found` })
+              return
+            }
+            // 禁用→清除 connecting 标记；启用→进入连接中宽限窗。
+            const row = listServers().find(r => r.id === id)
+            if (row !== undefined) {
+              if (parsed.disabled) connectingSince.delete(row.config.serverName)
+              else markConnecting(row.config.serverName)
+            }
+            jsonRes(200, { ok: true, id, disabled: parsed.disabled, message: `server ${id} ${parsed.disabled ? 'disabled' : 'enabled'} (config preserved)` })
             return
           }
 

@@ -15,6 +15,7 @@ import {
   addServer,
   updateServer,
   deleteServer,
+  setServerDisabled,
   validateServerConfig,
   rowIdFor,
   RegistryError,
@@ -271,5 +272,91 @@ describe('multiple mcp servers in one insert block', () => {
     addServer(httpServer)
     const rows = listServers()
     expect(rows.map(r => r.id).sort()).toEqual(['mcp-exa', 'mcp-github'])
+  })
+})
+
+describe('setServerDisabled', () => {
+  beforeEach(setTmpHome)
+  afterEach(restoreHome)
+
+  it('sets disabled=true at entry level (sibling of id/name/config)', () => {
+    addServer(stdioServer)
+    const ok = setServerDisabled('mcp-github', true)
+    expect(ok).toBe(true)
+    const after = readPatch()
+    // disabled 字段在 entry level，不在 config 块内。
+    expect(after).toMatch(/disabled:\s*true/)
+    // config 块完整保留。
+    expect(after).toContain('serverName: github')
+    expect(after).toContain('command: npx')
+  })
+
+  it('listServers reads disabled state back', () => {
+    addServer(stdioServer)
+    setServerDisabled('mcp-github', true)
+    const rows = listServers()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.disabled).toBe(true)
+    // config 仍可读。
+    expect(rows[0]!.config.serverName).toBe('github')
+  })
+
+  it('listServers defaults disabled=false when field absent', () => {
+    addServer(stdioServer)
+    const rows = listServers()
+    expect(rows[0]!.disabled).toBe(false)
+  })
+
+  it('enabling removes the disabled field (clean, no disabled: false)', () => {
+    addServer(stdioServer)
+    setServerDisabled('mcp-github', true)
+    setServerDisabled('mcp-github', false)
+    const after = readPatch()
+    expect(after).not.toMatch(/disabled/)
+    const rows = listServers()
+    expect(rows[0]!.disabled).toBe(false)
+  })
+
+  it('enabling an already-enabled server is a noop (idempotent)', () => {
+    addServer(stdioServer)
+    const before = readPatch()
+    setServerDisabled('mcp-github', false)
+    const after = readPatch()
+    expect(after).toBe(before)
+  })
+
+  it('returns false for missing id', () => {
+    addServer(stdioServer)
+    expect(setServerDisabled('nope', true)).toBe(false)
+  })
+
+  it('preserves !!js expressions and comments in other rows', () => {
+    writePatch(`# header comment
+- insert:
+    - id: mcp-github
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: github
+        transport: stdio
+        command: npx
+        cwd: !!js process.cwd()   # inline comment
+`)
+    setServerDisabled('mcp-github', true)
+    const after = readPatch()
+    expect(after).toContain('!!js process.cwd()')
+    expect(after).toContain('# inline comment')
+    expect(after).toContain('# header comment')
+    expect(after).toMatch(/disabled:\s*true/)
+  })
+
+  it('disabled field appears between name and config when set (entry-level, not in config)', () => {
+    addServer(stdioServer)
+    setServerDisabled('mcp-github', true)
+    const rows = listServers()
+    // 读路径：disabled 是 entry-level 字段，不在 config 内。
+    expect(rows[0]!.disabled).toBe(true)
+    expect(rows[0]!.config.serverName).toBe('github')
+    // config 内不应有 disabled 字段（McpServerConfig 不含此字段）。
+    expect((rows[0]!.config as unknown as Record<string, unknown>).disabled).toBeUndefined()
   })
 })

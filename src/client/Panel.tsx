@@ -1,14 +1,22 @@
 /**
  * MCP 管理面板（UI 对齐官方「模型」设置页设计语言）：
  * - 服务器列表：serverName + 传输标识 + 端点摘要 + 状态 Pill（connected/
- *   disconnected）+ 工具数；行内操作：编辑 / 删除
+ *   disconnected/disabled）+ 工具数；行内操作：编辑 / 禁用|启用 / 删除
  * - 新增/编辑表单：transport 切换（stdio ↔ streamable-http 字段组联动）；
- *   serverName/command/args/env/url/headers/超时
+ *   serverName/command/args/env/url/headers/超时；**内联渲染**——编辑既有
+ *   服务器时表单展开在对应卡片下方，新增时作为顶部独立卡片
  * - 工具浏览：点击服务器展开其 mcp__ 工具列表（名称 + 描述），只读
+ * - 禁用：entry-level `disabled: true` 字段（config 保留，loader 跳过挂载，
+ *   工具不注册→模型不可见），与删除语义分离
  * 全部 token 走 --dsw-alias-*；零 CSS 依赖（inline 样式）。
+ *
+ * 文案走 DSH locale（`dsh-plugin-mcp-manager` 命名空间）：slot 渲染器绑定
+ * 语言座位 `t`（跟随 DSH zh/en，better-locale 覆盖生效时优先覆盖文本）；
+ * `makeT(zh)` 是 slot 系统外的直挂回退（测试/快速挂载）。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+import { makeT, zh, type McpManagerTranslate } from './locales.ts'
 
 /** 服务器行（GET /servers）。 */
 interface ServerRow {
@@ -17,7 +25,8 @@ interface ServerRow {
   transport: 'stdio' | 'streamable-http'
   endpoint: string
   toolCount: number
-  status: 'connected' | 'connecting' | 'disconnected'
+  disabled: boolean
+  status: 'connected' | 'connecting' | 'disconnected' | 'disabled'
   config: {
     serverName: string
     transport: 'stdio' | 'streamable-http'
@@ -125,8 +134,147 @@ function textToRecord(text: string): Record<string, string> {
   return out
 }
 
-/** 设置页面板主体。 */
-export function McpPanel(): React.ReactNode {
+/**
+ * 编辑器表单（新增/编辑共用）。渲染在卡片内部（编辑既有）或独立卡片（新增）。
+ *
+ * 受控状态由父组件持有（editing/envText/headersText/setEditing/setEnvText/
+ * setHeadersText）；本组件只负责渲染 + onSave/onCancel 回调。
+ */
+interface EditorProps {
+  config: ServerRow['config']
+  isEdit: boolean
+  busy: boolean
+  envText: string
+  headersText: string
+  t: McpManagerTranslate
+  onConfigChange: (next: ServerRow['config']) => void
+  onEnvTextChange: (text: string) => void
+  onHeadersTextChange: (text: string) => void
+  onSwitchTransport: (transport: 'stdio' | 'streamable-http') => void
+  onSave: () => void
+  onCancel: () => void
+}
+
+function ServerEditor(props: EditorProps): React.ReactNode {
+  const { config: c, isEdit, busy, envText, headersText, t } = props
+  const isStdio = c.transport === 'stdio'
+  return (
+    <div style={editorStyle}>
+      <div style={fieldStyle}>
+        <label style={fieldLabelStyle}>{t('transport')}</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button onClick={() => props.onSwitchTransport('stdio')} disabled={busy}>
+            {isStdio ? '✓ stdio' : 'stdio'}
+          </Button>
+          <Button onClick={() => props.onSwitchTransport('streamable-http')} disabled={busy}>
+            {!isStdio ? '✓ streamable-http' : 'streamable-http'}
+          </Button>
+        </div>
+      </div>
+
+      <div style={fieldStyle}>
+        <label style={fieldLabelStyle}>{t('serverNameLabel')}</label>
+        <Input
+          value={c.serverName}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => props.onConfigChange({ ...c, serverName: e.target.value })}
+          disabled={busy}
+          placeholder={t('serverNamePlaceholder')}
+        />
+      </div>
+
+      {isStdio ? (
+        <>
+          <div style={fieldStyle}>
+            <label style={fieldLabelStyle}>{t('commandLabel')}</label>
+            <Input
+              value={c.command ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => props.onConfigChange({ ...c, command: e.target.value })}
+              disabled={busy}
+              placeholder={t('commandPlaceholder')}
+            />
+          </div>
+          <div style={fieldStyle}>
+            <label style={fieldLabelStyle}>{t('argsLabel')}</label>
+            <textarea
+              value={(c.args ?? []).join('\n')}
+              onChange={(e) => props.onConfigChange({ ...c, args: e.target.value.split('\n') })}
+              disabled={busy}
+              rows={3}
+              style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', padding: '8px 10px' }}
+              placeholder={t('argsPlaceholder')}
+            />
+          </div>
+          <div style={fieldStyle}>
+            <label style={fieldLabelStyle}>{t('envLabel')}</label>
+            <textarea
+              value={envText}
+              onChange={(e) => props.onEnvTextChange(e.target.value)}
+              disabled={busy}
+              rows={3}
+              style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', padding: '8px 10px' }}
+              placeholder={t('envPlaceholder')}
+            />
+          </div>
+          <div style={fieldStyle}>
+            <label style={fieldLabelStyle}>{t('cwdLabel')}</label>
+            <Input
+              value={c.cwd ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => props.onConfigChange({ ...c, cwd: e.target.value })}
+              disabled={busy}
+              placeholder=""
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={fieldStyle}>
+            <label style={fieldLabelStyle}>{t('urlLabel')}</label>
+            <Input
+              value={c.url ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => props.onConfigChange({ ...c, url: e.target.value })}
+              disabled={busy}
+              placeholder={t('urlPlaceholder')}
+            />
+          </div>
+          <div style={fieldStyle}>
+            <label style={fieldLabelStyle}>{t('headersLabel')}</label>
+            <textarea
+              value={headersText}
+              onChange={(e) => props.onHeadersTextChange(e.target.value)}
+              disabled={busy}
+              rows={3}
+              style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', padding: '8px 10px' }}
+              placeholder={t('headersPlaceholder')}
+            />
+          </div>
+        </>
+      )}
+
+      <div style={fieldStyle}>
+        <label style={fieldLabelStyle}>{t('timeoutLabel')}</label>
+        <Input
+          type="number"
+          value={String(c.toolCallTimeoutMs ?? 60000)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => props.onConfigChange({ ...c, toolCallTimeoutMs: Number(e.target.value) || 60000 })}
+          disabled={busy}
+        />
+      </div>
+
+      <div style={editorActionsStyle}>
+        <Button onClick={props.onCancel} disabled={busy}>{t('cancel')}</Button>
+        <Button onClick={props.onSave} disabled={busy}>
+          {isEdit ? t('save') : t('add')}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 设置页面板主体。`t` 是 slot 系统绑定 locale 座位后的翻译函数（跟随 DSH
+ * zh/en + better-locale 覆盖）；缺省回退到 zh 字典，供 slot 外直挂使用。
+ */
+export function McpPanel({ t = makeT(zh) }: { t?: McpManagerTranslate }): React.ReactNode {
   const [servers, setServers] = useState<ServerRow[]>([])
   const [toolGroups, setToolGroups] = useState<ToolGroups>({})
   const [error, setError] = useState<string | undefined>(undefined)
@@ -178,7 +326,7 @@ export function McpPanel(): React.ReactNode {
     setError(undefined)
   }, [])
 
-  /** 打开编辑表单。 */
+  /** 打开编辑表单（内联到对应卡片下方）。 */
   const startEdit = useCallback((row: ServerRow): void => {
     setEditing({ id: row.id, config: { ...row.config } })
     setEnvText(recordToText(row.config.env))
@@ -233,6 +381,31 @@ export function McpPanel(): React.ReactNode {
       const res = await fetch(`/api/mcp-manager/servers/${encodeURIComponent(id)}`, { method: 'DELETE' })
       const body = (await res.json()) as { ok?: boolean; message?: string }
       if (body.ok !== true) throw new Error(body.message ?? 'delete failed')
+      // 若正在编辑被删除的行，关闭编辑器。
+      if (editing?.id === id) setEditing(undefined)
+      await refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setBusy(false)
+    }
+  }, [refresh, editing])
+
+  /** 禁用/启用（不删除配置）。 */
+  const toggleDisabled = useCallback(async (row: ServerRow): Promise<void> => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      const res = await fetch(
+        `/api/mcp-manager/servers/${encodeURIComponent(row.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ disabled: !row.disabled }),
+        },
+      )
+      const body = (await res.json()) as { ok?: boolean; message?: string }
+      if (body.ok !== true) throw new Error(body.message ?? 'toggle failed')
       await refresh()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -251,180 +424,115 @@ export function McpPanel(): React.ReactNode {
     })
   }, [])
 
-  const c = editing?.config
-  const isStdio = c?.transport === 'stdio'
-
   return (
     <section style={sectionStyle}>
-      <h2 style={titleStyle}>MCP 服务器</h2>
+      <h2 style={titleStyle}>{t('heading')}</h2>
       <p style={introStyle}>
-        管理 MCP 服务器连接。每台服务器由官方 <code>@deepseek-ai/dsh-mcp-client</code> 挂载，
-        工具以 <code>mcp__&lt;serverName&gt;__*</code> 命名注册。配置写入 profile patch，HMR 实时生效。
+        {t('introBefore')} <code>@deepseek-ai/dsh-mcp-client</code>
+        {' '}{t('introMid')}{' '}<code>mcp__&lt;serverName&gt;__*</code>
+        {' '}{t('introAfter')}
       </p>
-      <p style={warnStyle}>
-        ⚠ env / headers 以明文存入 profile cordis.patch.yml（与官方示例同形态）。勿放长期密钥。
-      </p>
+      <p style={warnStyle}>{t('envWarning')}</p>
 
       {error !== undefined && <p style={errorStyle}>{error}</p>}
 
       {loading
-        ? <p style={introStyle}>加载中…</p>
+        ? <p style={introStyle}>{t('loading')}</p>
         : (
           <div style={rowsStyle}>
-            {servers.map(row => (
-              <div key={row.id} style={rowCardStyle}>
+            {/* 新增表单：作为顶部独立卡片渲染（id 为空表示新建） */}
+            {editing !== undefined && editing.id.length === 0 && (
+              <div style={rowCardStyle}>
                 <div style={rowHeadStyle}>
                   <span style={identityStyle}>
-                    <span style={nameStyle}>{row.config.serverName}</span>
-                    {row.status === 'connected'
-                      ? <Pill active>{row.toolCount} 工具</Pill>
-                      : row.status === 'connecting'
-                        ? <Pill>连接中…</Pill>
-                        : <Pill>未连接</Pill>}
-                  </span>
-                  <span style={actionsStyle}>
-                    <Button onClick={() => toggleExpand(row.id)} disabled={busy}>
-                      {expanded.has(row.id) ? '收起' : '工具'}
-                    </Button>
-                    <Button onClick={() => startEdit(row)} disabled={busy}>编辑</Button>
-                    <Button onClick={() => void remove(row.id)} disabled={busy}>删除</Button>
+                    <span style={nameStyle}>{t('addTitle')}</span>
                   </span>
                 </div>
-                <span style={metaStyle}>
-                  {row.transport} · {row.endpoint} · id: {row.id}
-                </span>
-                {expanded.has(row.id) && (
-                  <div style={toolListStyle}>
-                    {(toolGroups[row.config.serverName] ?? []).length === 0
-                      ? <span style={toolRowStyle}>（无已注册工具——服务器未连接或未同步）</span>
-                      : toolGroups[row.config.serverName]!.map(t => (
-                        <div key={t.name} style={toolRowStyle}>
-                          <span style={toolNameStyle}>{t.rawName}</span>
-                          {t.description !== undefined && t.description.length > 0 ? ` — ${t.description}` : ''}
-                        </div>
-                      ))}
-                  </div>
-                )}
+                <ServerEditor
+                  config={editing.config}
+                  isEdit={false}
+                  busy={busy}
+                  envText={envText}
+                  headersText={headersText}
+                  t={t}
+                  onConfigChange={(next) => setEditing(prev => prev === undefined ? prev : { ...prev, config: next })}
+                  onEnvTextChange={setEnvText}
+                  onHeadersTextChange={setHeadersText}
+                  onSwitchTransport={switchTransport}
+                  onSave={() => void save()}
+                  onCancel={() => setEditing(undefined)}
+                />
               </div>
-            ))}
-            {servers.length === 0 && <p style={introStyle}>尚无 MCP 服务器。点击「新增」添加。</p>}
+            )}
+
+            {servers.map(row => {
+              const isEditingThis = editing?.id === row.id
+              return (
+                <div key={row.id} style={{ ...rowCardStyle, opacity: row.disabled ? 0.6 : 1 }}>
+                  <div style={rowHeadStyle}>
+                    <span style={identityStyle}>
+                      <span style={nameStyle}>{row.config.serverName}</span>
+                      {row.disabled
+                        ? <Pill>{t('statusDisabled')}</Pill>
+                        : row.status === 'connected'
+                          ? <Pill active>{t('toolCount', { count: row.toolCount })}</Pill>
+                          : row.status === 'connecting'
+                            ? <Pill>{t('statusConnecting')}</Pill>
+                            : <Pill>{t('statusDisconnected')}</Pill>}
+                    </span>
+                    <span style={actionsStyle}>
+                      <Button onClick={() => toggleExpand(row.id)} disabled={busy || row.disabled}>
+                        {expanded.has(row.id) ? t('collapse') : t('tools')}
+                      </Button>
+                      <Button onClick={() => startEdit(row)} disabled={busy || isEditingThis}>{t('edit')}</Button>
+                      <Button onClick={() => void toggleDisabled(row)} disabled={busy || isEditingThis}>
+                        {row.disabled ? t('enable') : t('disable')}
+                      </Button>
+                      <Button onClick={() => void remove(row.id)} disabled={busy || isEditingThis}>{t('delete')}</Button>
+                    </span>
+                  </div>
+                  <span style={metaStyle}>
+                    {row.transport} · {row.endpoint} · id: {row.id}
+                  </span>
+                  {expanded.has(row.id) && (
+                    <div style={toolListStyle}>
+                      {(toolGroups[row.config.serverName] ?? []).length === 0
+                        ? <span style={toolRowStyle}>{t('noTools')}</span>
+                        : toolGroups[row.config.serverName]!.map(tool => (
+                          <div key={tool.name} style={toolRowStyle}>
+                            <span style={toolNameStyle}>{tool.rawName}</span>
+                            {tool.description !== undefined && tool.description.length > 0 ? ` — ${tool.description}` : ''}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                  {/* 编辑表单：内联到对应卡片下方 */}
+                  {isEditingThis && editing !== undefined && (
+                    <ServerEditor
+                      config={editing.config}
+                      isEdit={true}
+                      busy={busy}
+                      envText={envText}
+                      headersText={headersText}
+                      t={t}
+                      onConfigChange={(next) => setEditing(prev => prev === undefined ? prev : { ...prev, config: next })}
+                      onEnvTextChange={setEnvText}
+                      onHeadersTextChange={setHeadersText}
+                      onSwitchTransport={switchTransport}
+                      onSave={() => void save()}
+                      onCancel={() => setEditing(undefined)}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            {servers.length === 0 && editing === undefined && <p style={introStyle}>{t('empty')}</p>}
           </div>
         )}
 
       <div style={editorActionsStyle}>
-        {editing === undefined && <Button onClick={startAdd} disabled={busy}>+ 新增服务器</Button>}
+        {editing === undefined && <Button onClick={startAdd} disabled={busy}>{t('addServer')}</Button>}
       </div>
-
-      {editing !== undefined && c !== undefined && (
-        <div style={editorStyle}>
-          <div style={fieldStyle}>
-            <label style={fieldLabelStyle}>传输方式</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button onClick={() => switchTransport('stdio')} disabled={busy}>
-                {isStdio ? '✓ stdio' : 'stdio'}
-              </Button>
-              <Button onClick={() => switchTransport('streamable-http')} disabled={busy}>
-                {!isStdio ? '✓ streamable-http' : 'streamable-http'}
-              </Button>
-            </div>
-          </div>
-
-          <div style={fieldStyle}>
-            <label style={fieldLabelStyle}>serverName（工具命名空间，唯一）</label>
-            <Input
-              value={c.serverName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditing(p => p === undefined ? p : { ...p, config: { ...p.config, serverName: e.target.value } })}
-              disabled={busy}
-              placeholder="github"
-            />
-          </div>
-
-          {isStdio ? (
-            <>
-              <div style={fieldStyle}>
-                <label style={fieldLabelStyle}>command</label>
-                <Input
-                  value={c.command ?? ''}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditing(p => p === undefined ? p : { ...p, config: { ...p.config, command: e.target.value } })}
-                  disabled={busy}
-                  placeholder="npx"
-                />
-              </div>
-              <div style={fieldStyle}>
-                <label style={fieldLabelStyle}>args（每行一个）</label>
-                <textarea
-                  value={(c.args ?? []).join('\n')}
-                  onChange={(e) => setEditing(p => p === undefined ? p : { ...p, config: { ...p.config, args: e.target.value.split('\n') } })}
-                  disabled={busy}
-                  rows={3}
-                  style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', padding: '8px 10px' }}
-                  placeholder={'-y\n@modelcontextprotocol/server-github'}
-                />
-              </div>
-              <div style={fieldStyle}>
-                <label style={fieldLabelStyle}>env（每行 key=value，明文存储）</label>
-                <textarea
-                  value={envText}
-                  onChange={(e) => setEnvText(e.target.value)}
-                  disabled={busy}
-                  rows={3}
-                  style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', padding: '8px 10px' }}
-                  placeholder="GITHUB_TOKEN=ghp_xxx"
-                />
-              </div>
-              <div style={fieldStyle}>
-                <label style={fieldLabelStyle}>cwd（可空）</label>
-                <Input
-                  value={c.cwd ?? ''}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditing(p => p === undefined ? p : { ...p, config: { ...p.config, cwd: e.target.value } })}
-                  disabled={busy}
-                  placeholder=""
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={fieldStyle}>
-                <label style={fieldLabelStyle}>url</label>
-                <Input
-                  value={c.url ?? ''}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditing(p => p === undefined ? p : { ...p, config: { ...p.config, url: e.target.value } })}
-                  disabled={busy}
-                  placeholder="https://mcp.example.com/mcp"
-                />
-              </div>
-              <div style={fieldStyle}>
-                <label style={fieldLabelStyle}>headers（每行 key=value，明文存储）</label>
-                <textarea
-                  value={headersText}
-                  onChange={(e) => setHeadersText(e.target.value)}
-                  disabled={busy}
-                  rows={3}
-                  style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)', padding: '8px 10px' }}
-                  placeholder="Authorization=Bearer xxx"
-                />
-              </div>
-            </>
-          )}
-
-          <div style={fieldStyle}>
-            <label style={fieldLabelStyle}>toolCallTimeoutMs</label>
-            <Input
-              type="number"
-              value={String(c.toolCallTimeoutMs ?? 60000)}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditing(p => p === undefined ? p : { ...p, config: { ...p.config, toolCallTimeoutMs: Number(e.target.value) || 60000 } })}
-              disabled={busy}
-            />
-          </div>
-
-          <div style={editorActionsStyle}>
-            <Button onClick={() => setEditing(undefined)} disabled={busy}>取消</Button>
-            <Button onClick={() => void save()} disabled={busy}>
-              {editing.id.length > 0 ? '保存' : '添加'}
-            </Button>
-          </div>
-        </div>
-      )}
     </section>
   )
 }

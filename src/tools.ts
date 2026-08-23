@@ -1,5 +1,5 @@
 /**
- * MCP 管理工具（mcp_* ×4）：agent 面的服务器注册表管理（对齐开发计划 §M4）。
+ * MCP 管理工具（mcp_* ×5）：agent 面的服务器注册表管理（对齐开发计划 §M4）。
  * 与 GUI 面板写同一安装态（profile cordis.patch.yml 的 mcp-client insert 行），
  * 配置 HMR 实时挂载——agent 调用后工具立即可用（若服务器连接成功）。
  *
@@ -7,6 +7,8 @@
  * - mcp_server_add：新增服务器（校验 + 写 insert 行 → HMR 挂载 mcp-client 实例）
  * - mcp_server_update：整块替换 config（serverName 不变则工具名不变）
  * - mcp_server_remove：移除行 → 工具随实例 dispose 注销
+ * - mcp_server_set_enabled：禁用/启用 entry-level disabled 字段（config 保留，
+ *   禁用时 loader 跳过挂载 → 工具不注册 → 模型不可见）
  *
  * 依赖注入（deps）：避免与 index.ts 循环依赖。连接生命周期完全委托官方
  * mcp-client——管理插件只写配置，不拉连接。
@@ -24,6 +26,8 @@ export interface McpToolDeps {
   updateServer(id: string, config: McpServerConfig): void
   /** 删除行。返回是否删除。 */
   deleteServer(id: string): boolean
+  /** 设置禁用状态（entry-level disabled 字段；config 保留）。 */
+  setServerDisabled(id: string, disabled: boolean): void
   /** 运行态：已注册工具 schemas（ctx.tools.schemas()），用于按 serverName 计数。 */
   registeredToolNames(): string[]
   /** 各 serverName 最近配置写入时间戳（推断「连接中」中间状态）。 */
@@ -39,24 +43,32 @@ interface ServerView {
   transport: string
   /** 端点摘要：stdio → command；http → url。 */
   endpoint: string
-  /** 已注册工具数（mcp__<serverName>__ 前缀的 schema 数）。 */
+  /** 已注册工具数（mcp__<serverName>__ 前缀的 schema 数；禁用时强制为 0）。 */
   toolCount: number
   /**
-   * 状态：connected（工具数>0）/ connecting（0 工具但在配置写入宽限窗内，
-   * mcp-client 正在挂载/握手）/ disconnected（0 工具且超窗，连接失败/重连中）。
+   * 是否被禁用（entry-level `disabled: true`）。禁用时配置保留在 patch 文件中，
+   * 但 loader 跳过挂载 mcp-client 实例 → 工具不注册（模型不可见）。
    */
-  status: 'connected' | 'connecting' | 'disconnected'
+  disabled: boolean
+  /**
+   * 状态：disabled（entry-level disabled=true，loader 未挂载实例，工具未注册）/
+   * connected（工具数>0）/ connecting（0 工具但在配置写入宽限窗内，mcp-client
+   * 正在挂载/握手）/ disconnected（0 工具且超窗，连接失败/重连中）。
+   */
+  status: 'connected' | 'connecting' | 'disconnected' | 'disabled'
 }
 
 /** 把注册表行 + 运行态工具名投影为 agent 可见的规范视图。 */
 function toServerView(row: McpServerRow, toolNames: string[], connectingSince: Map<string, number>): ServerView {
   const prefix = `mcp__${row.config.serverName}__`
-  const toolCount = toolNames.filter(n => n.startsWith(prefix)).length
+  const toolCount = row.disabled ? 0 : toolNames.filter(n => n.startsWith(prefix)).length
   const endpoint = row.config.transport === 'stdio'
     ? `${row.config.command ?? ''} ${(row.config.args ?? []).join(' ')}`.trim()
     : (row.config.url ?? '')
   let status: ServerView['status']
-  if (toolCount > 0) {
+  if (row.disabled) {
+    status = 'disabled'
+  } else if (toolCount > 0) {
     status = 'connected'
   } else {
     const since = connectingSince.get(row.config.serverName)
@@ -68,6 +80,7 @@ function toServerView(row: McpServerRow, toolNames: string[], connectingSince: M
     transport: row.config.transport,
     endpoint,
     toolCount,
+    disabled: row.disabled,
     status,
   }
 }
@@ -118,7 +131,9 @@ export function createMcpTools(deps: McpToolDeps): ToolDefinition[] {
       description: 'List registered MCP servers and their live tool counts. Each server is an '
         + '@deepseek-ai/dsh-mcp-client instance mounted from the profile cordis.patch.yml insert row. '
         + 'status: connected (tools registered), connecting (mcp-client mounting/handshaking within '
-        + 'the post-write grace window), disconnected (0 tools past the grace window — failed/exhausted).',
+        + 'the post-write grace window), disconnected (0 tools past the grace window — failed/exhausted), '
+        + 'disabled (entry-level disabled=true — config preserved but loader skips mounting, tools not '
+        + 'registered and invisible to the model).',
       parameters: {},
       output: {
         schema: {
@@ -137,7 +152,8 @@ export function createMcpTools(deps: McpToolDeps): ToolDefinition[] {
                   transport: { type: 'string', required: true },
                   endpoint: { type: 'string', required: true },
                   toolCount: { type: 'number', required: true },
-                  status: { type: 'string', required: true, enum: ['connected', 'connecting', 'disconnected'] },
+                  disabled: { type: 'boolean', required: true },
+                  status: { type: 'string', required: true, enum: ['connected', 'connecting', 'disconnected', 'disabled'] },
                 },
               },
             },
@@ -243,6 +259,46 @@ export function createMcpTools(deps: McpToolDeps): ToolDefinition[] {
           ok: true,
           id,
           message: `mcp_server_remove: removed "${id}" — mcp-client disposing, tools unregistering.`,
+        }
+      },
+    }),
+
+    defineTool({
+      name: 'mcp_server_set_enabled',
+      description: 'Enable or disable an MCP server without deleting its config. Sets the entry-level '
+        + '`disabled` field (sibling of id/name/config) in the profile cordis.patch.yml. When disabled, '
+        + 'the loader skips mounting the @deepseek-ai/dsh-mcp-client instance — its tools '
+        + '(mcp__<serverName>__*) are NOT registered and the model CANNOT see or call them. The config '
+        + 'block is preserved verbatim, so re-enabling is a no-cost toggle (no re-entry of fields). '
+        + 'Use this instead of mcp_server_remove when you want to temporarily hide a server from the model.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'The server insert-row id (e.g. mcp-github).' },
+        enabled: { type: 'boolean', required: true, description: 'true = mount the instance (tools visible); false = skip mounting (tools hidden, config preserved).' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            ok: { type: 'boolean', required: true },
+            id: { type: 'string', required: true },
+            enabled: { type: 'boolean', required: true },
+            message: { type: 'string', required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: value.message }],
+      },
+      async execute(args) {
+        const id = String(args.id)
+        const enabled = Boolean(args.enabled)
+        deps.setServerDisabled(id, !enabled)
+        return {
+          ok: true,
+          id,
+          enabled,
+          message: enabled
+            ? `mcp_server_set_enabled: enabled "${id}" — mcp-client mounting via config HMR, tools will appear as mcp__<serverName>__* once the connection succeeds.`
+            : `mcp_server_set_enabled: disabled "${id}" — mcp-client disposing, tools unregistering. Config preserved in patch file; re-enable anytime.`,
         }
       },
     }),

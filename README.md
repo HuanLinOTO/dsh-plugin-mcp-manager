@@ -1,6 +1,6 @@
-[![dshfind](https://dshfind.com/api/badge/huanlinoto/dsh-plugin-mcp-manager?lang=zh)](https://dshfind.com/zh/plugins/huanlinoto/dsh-plugin-mcp-manager?ref=badge)
-
-> 📌 本插件已收录于 [dshfind](https://dshfind.com/zh) 插件超市，点击上方徽章直达主页。
+<p align="center">
+  <a href="https://dshfind.com/zh/plugins/huanlinoto/dsh-plugin-mcp-manager"><img src="https://dshfind.com/api/card/huanlinoto/dsh-plugin-mcp-manager?lang=zh" alt="dsh-plugin-mcp-manager card"></a>
+</p>
 
 # dsh-mcp-manager
 
@@ -22,6 +22,11 @@ GUI 状态/工具浏览 <──ctx.tools.schemas() 过滤 mcp__──┘
 
 每台 MCP 服务器 = profile `cordis.patch.yml` 中一条 `name: '@deepseek-ai/dsh-mcp-client'` 的
 insert 行。配置 HMR 实时挂载/卸载/热替换，无需重启 web。
+
+**禁用 ≠ 删除**：禁用写入 entry-level `disabled: true`（与 `id`/`name`/`config` 同级），
+loader 跳过挂载该 mcp-client 实例 → 工具不注册（模型不可见），config 原样保留在 patch
+文件中。重新启用只需移除该字段，loader HMR 重新挂载。适合「暂时不让模型用某台服务器」
+而不丢失配置。
 
 ## 开发
 
@@ -45,11 +50,11 @@ pnpm build       # tsdown 双 bundle：lib/index.mjs（Node half）+ lib/index.j
 
 | 文件 | 职责 |
 |------|------|
-| `src/registry.ts` | 服务器注册表：eemeli `yaml` Document API 读写 insert 行 + `loadOverlayPatches` 校验 + serverName 唯一 |
-| `src/tools.ts` | agent 面 `mcp_*` ×4 工具（defineTool，规范 JSON 输出） |
+| `src/registry.ts` | 服务器注册表：eemeli `yaml` Document API 读写 insert 行 + `loadOverlayPatches` 校验 + serverName 唯一 + entry-level `disabled` 字段 |
+| `src/tools.ts` | agent 面 `mcp_*` ×5 工具（defineTool，规范 JSON 输出） |
 | `src/index.ts` | Node half：`/api/mcp-manager` 路由 + `ctx.tools.schemas()` 过滤 + mcp 工具注册 |
 | `src/client/index.ts` | client half：`settings.section` 注册「MCP」面板 |
-| `src/client/Panel.tsx` | 面板 UI：服务器列表 + 增删改表单 + 工具浏览 |
+| `src/client/Panel.tsx` | 面板 UI：服务器列表 + 增删改表单（内联卡片下方）+ 禁用/启用 + 工具浏览 |
 
 ### 数据模型
 
@@ -59,6 +64,7 @@ pnpm build       # tsdown 双 bundle：lib/index.mjs（Node half）+ lib/index.j
 - insert:
     - id: mcp-github          # 行 id（mcp-<serverName>）
       name: '@deepseek-ai/dsh-mcp-client'
+      disabled: true           # 可选 entry-level 字段：loader 跳过挂载，工具不注册，config 保留
       config:
         serverName: github    # 工具命名空间 mcp__github__*
         transport: stdio      # stdio | streamable-http
@@ -71,6 +77,8 @@ pnpm build       # tsdown 双 bundle：lib/index.mjs（Node half）+ lib/index.j
 
 - 支持 `stdio`（command/args/env/cwd）与 `streamable-http`（url/headers）。
 - 编辑 = 整块替换 config（不深合并，与 loader patch 语义一致）。
+- **禁用** = 设置 entry-level `disabled: true`（与 id/name/config 同级，不在 config 内）。
+  loader 跳过挂载 → 工具不注册 → 模型不可见；启用 = 移除该字段。
 - 写前用 eemeli yaml 解析 + 可选 `loadOverlayPatches`（app-boot）校验；写后失败自动回滚。
 - **保留**其他行的 `!!js` 表达式与注释（eemeli Document API 往返保留）。
 
@@ -90,19 +98,24 @@ dsh plugin --profile web add "github:dsh-external/dsh-mcp-manager"
 
 ### 使用
 
-- **GUI**：设置页 → 「MCP」面板。新增/编辑/删除服务器；点击「工具」展开该服务器的 `mcp__*` 工具列表。
-- **Agent**：模型可调用 `mcp_server_list` / `mcp_server_add` / `mcp_server_update` / `mcp_server_remove`。
+- **GUI**：设置页 → 「MCP」面板。
+  - 新增/编辑/删除服务器；编辑表单内联在对应卡片下方（不在全局底部）。
+  - 禁用/启用服务器（不删除配置；禁用后 loader 跳过挂载，工具不注册，模型不可见）。
+  - 点击「工具」展开该服务器的 `mcp__*` 工具列表（禁用状态下不可展开）。
+- **Agent**：模型可调用 `mcp_server_list` / `mcp_server_add` / `mcp_server_update` /
+  `mcp_server_remove` / `mcp_server_set_enabled`。
 
 ### API 路由
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/api/mcp-manager/servers` | GET | 列出服务器 + 工具数 + 状态 |
+| `/api/mcp-manager/servers` | GET | 列出服务器 + 工具数 + 状态 + disabled |
 | `/api/mcp-manager/servers` | POST | 新增（body: `{config}`）→ HMR 挂载 |
 | `/api/mcp-manager/servers/<id>` | PUT | 编辑（整块替换 config） |
+| `/api/mcp-manager/servers/<id>` | PATCH | 禁用/启用（body: `{disabled: boolean}`；config 保留） |
 | `/api/mcp-manager/servers/<id>` | DELETE | 删除 |
 | `/api/mcp-manager/tools` | GET | 工具浏览（`mcp__` 前缀按 serverName 分组） |
-| `/api/mcp-manager/status` | GET | 运行态状态 |
+| `/api/mcp-manager/status` | GET | 运行态状态（含 disabled） |
 
 ### Secret 处理
 
@@ -121,7 +134,7 @@ README 明确警示：勿放长期密钥；部署隔离。P1 可接 `@deepseek-a
 - [x] **A4**：Config 校验用 `validateServerConfig`（fail loud，携带字段名）
 - [x] **A6**：不导出 default
 - [x] **C4**：工具返回规范 JSON 值 + render 投影分离
-- [x] **G**：测试分层（Unit：27 用例覆盖增删改/唯一/非法拒绝/!!js 保留/空文件/多行）
+- [x] **G**：测试分层（Unit：35 用例覆盖增删改/禁用/唯一/非法拒绝/!!js 保留/空文件/多行）
 - [x] **README**：含开发/运行/检查三节
 
 ### 预构建策略说明

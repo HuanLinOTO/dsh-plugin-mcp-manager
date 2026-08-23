@@ -87,6 +87,12 @@ export interface McpServerRow {
   name: string
   /** 服务器配置。 */
   config: McpServerConfig
+  /**
+   * 是否被禁用（entry-level `disabled` 字段，与 id/name/config 同级）。
+   * true = loader 跳过挂载该 mcp-client 实例，工具不注册（模型不可见），
+   * 但配置保留在 patch 文件中。重新启用只需移除该字段。
+   */
+  disabled: boolean
 }
 
 /** 校验错误（携带字段名便于 UI 定位）。 */
@@ -232,7 +238,7 @@ function configToData(config: McpServerConfig): Record<string, unknown> {
 
 /**
  * 读全部 MCP 服务器行。配置块缺失/结构异常的行被跳过（不抛——读路径容忍）。
- * 返回每行的 id 与解析出的 config（仅含存在的字段）。
+ * 返回每行的 id 与解析出的 config（仅含存在的字段）+ entry-level disabled 标志。
  */
 export function listServers(): McpServerRow[] {
   const doc = readPatchDocument()
@@ -248,7 +254,11 @@ export function listServers(): McpServerRow[] {
     } catch {
       continue
     }
-    out.push({ id, name: MCP_CLIENT_PACKAGE, config })
+    // entry-level disabled 字段（与 id/name/config 同级，不在 config 内）。
+    // 不传 true → 返回 JS 原生值；!!js 表达式在此处不抛（loader 自己解析）。
+    const disabledRaw = row.get('disabled')
+    const disabled = disabledRaw === true || disabledRaw === 'true'
+    out.push({ id, name: MCP_CLIENT_PACKAGE, config, disabled })
   }
   return out
 }
@@ -433,6 +443,37 @@ export function isPatchReadable(): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * 设置一个服务器的禁用状态。`disabled: true` 写在 entry level（与 id/name/config
+ * 同级），loader 跳过挂载该 mcp-client 实例 → 工具不注册（模型不可见），配置保留。
+ * 设为 false 时移除 `disabled` 字段（比 `disabled: false` 更干净），loader HMR
+ * 重新挂载实例。
+ *
+ * @returns true 设置成功；false 行不存在。
+ * @throws RegistryError 写后校验失败（已回滚）。
+ */
+export function setServerDisabled(
+  id: string,
+  disabled: boolean,
+  opts?: { loadOverlayPatches?: LoadOverlayPatches },
+): boolean {
+  const doc = readPatchDocument()
+  const rows = collectMcpRows(doc)
+  const target = rows.find(r => r.id === id)
+  if (target === undefined) return false
+  if (disabled) {
+    target.row.set('disabled', true)
+  } else {
+    // 已存在则删除；不存在则 noop（幂等）。
+    if (target.row.has('disabled')) {
+      target.row.delete('disabled')
+    }
+  }
+  writeAndValidate(doc, opts?.loadOverlayPatches)
+  console.log(`[dsh-mcp-manager] set server ${id} disabled=${disabled}`)
+  return true
 }
 
 /** 备份 patch 文件到 .bak（写前调用，防写坏）。返回备份路径或 null。 */
