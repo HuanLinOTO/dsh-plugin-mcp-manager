@@ -46,11 +46,23 @@ export function apply(ctx: ClientContext): void {
   // better-locale override: register the 19-language dicts so a selected
   // override language (with DSH on 'en') replaces the panel copy. The
   // service is optional — no better-locale, no dicts.
-  const betterLocale = ctx.get('betterLocale') as BetterLocaleOverrideStore | undefined
-  if (betterLocale !== undefined) {
-    ctx.effect(
-      () => betterLocale.register(NS, dicts),
-      'dsh-plugin-mcp-manager: better-locale override dicts',
-    )
-  }
+  // Activation-order-safe: re-check ctx.get('betterLocale') on every locale
+  // revision bump (better-locale bumps on activation + override switch).
+  ctx.effect(() => {
+    let dispose: (() => void) | undefined
+    const sync = (): void => {
+      dispose?.()
+      dispose = undefined
+      const store = ctx.get('betterLocale') as BetterLocaleOverrideStore | undefined
+      if (store !== undefined) {
+        dispose = store.register(NS, dicts)
+      }
+    }
+    sync()
+    const unsubscribe = ctx.locale.subscribe(sync)
+    return () => {
+      unsubscribe()
+      dispose?.()
+    }
+  }, 'dsh-plugin-mcp-manager: better-locale override dicts')
 }
