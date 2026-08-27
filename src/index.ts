@@ -21,7 +21,7 @@
  *                                                  官方 mcp-client 实例（连接+注册工具）
  *   GUI 状态/工具浏览 <──ctx.tools.schemas() 过滤 mcp__──┘
  */
-import type { Context } from 'cordis'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   listServers,
   addServer,
@@ -51,10 +51,8 @@ export const inject = ['webServer', 'tools']
 
 interface ManagerCtx extends Context {
   webServer?: WebServerLike
-  tools?: {
-    register(definition: unknown): () => void
-    schemas(): Array<{ name: string; description: string; parameters: unknown }>
-  }
+  // `tools` 来自 @deepseek-ai/dsh-tools 的 Context merge（ToolRuntime：
+  // register(definition) / schemas()），v0.1.2-alpha.1 起由宿主提供真实类型。
 }
 
 /** 读请求体（POST/PUT）。 */
