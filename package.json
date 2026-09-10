@@ -1,7 +1,7 @@
 {
   "name": "@huanlin/dsh-plugin-mcp-manager",
   "description": "MCP 服务器管理面板：GUI 增删改 MCP 服务器配置（写入 profile cordis.patch.yml 的 mcp-client insert 行，配置 HMR 实时挂载）+ 工具浏览 + agent 面 mcp_* 管理工具。连接生命周期委托官方 @deepseek-ai/dsh-mcp-client。",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },
@@ -44,14 +44,14 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-tools": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-app-boot": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.2-rc.1"
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-app-boot": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-app-boot": {
@@ -71,6 +71,10 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-app-boot": "link:D:/Projects/deepseek-harness/dsh/packages/boot/app-boot",
+    "@deepseek-ai/dsh-client-ui-primitives": "link:D:/Projects/deepseek-harness/dsh/packages/client/ui-primitives",
+    "@deepseek-ai/dsh-mcp-client": "link:D:/Projects/deepseek-harness/dsh/packages/mcp/mcp-client",
+    "@deepseek-ai/dsh-tools": "link:D:/Projects/deepseek-harness/dsh/packages/core/tools",
     "@types/react": "~18.3.1",
     "@types/node": "^22.0.0",
     "react": "^18.2.0",

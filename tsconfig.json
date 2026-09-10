@@ -8,7 +8,12 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@deepseek-ai/cordis": ["D:/Projects/deepseek-harness/dsh/vendor/cordis/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-tools": ["D:/Projects/deepseek-harness/dsh/packages/core/tools/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-llm": ["D:/Projects/deepseek-harness/dsh/packages/llm/llm/lib/types/index.d.ts"]
+    }
   },
   "include": ["src", "tests"],
   "exclude": ["src/client"]

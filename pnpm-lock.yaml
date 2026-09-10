@@ -12,6 +12,18 @@ importers:
         specifier: ^2.4.0
         version: 2.9.0
     devDependencies:
+      '@deepseek-ai/dsh-app-boot':
+        specifier: link:D:/Projects/deepseek-harness/dsh/packages/boot/app-boot
+        version: link:../dsh/packages/boot/app-boot
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: link:D:/Projects/deepseek-harness/dsh/packages/client/ui-primitives
+        version: link:../dsh/packages/client/ui-primitives
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: link:D:/Projects/deepseek-harness/dsh/packages/mcp/mcp-client
+        version: link:../dsh/packages/mcp/mcp-client
+      '@deepseek-ai/dsh-tools':
+        specifier: link:D:/Projects/deepseek-harness/dsh/packages/core/tools
+        version: link:../dsh/packages/core/tools
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
