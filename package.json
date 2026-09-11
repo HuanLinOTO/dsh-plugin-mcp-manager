@@ -1,7 +1,7 @@
 {
   "name": "@huanlin/dsh-plugin-mcp-manager",
   "description": "MCP 服务器管理面板：GUI 增删改 MCP 服务器配置（写入 profile cordis.patch.yml 的 mcp-client insert 行，配置 HMR 实时挂载）+ 工具浏览 + agent 面 mcp_* 管理工具。连接生命周期委托官方 @deepseek-ai/dsh-mcp-client。",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publishConfig": {
     "access": "public"
   },
