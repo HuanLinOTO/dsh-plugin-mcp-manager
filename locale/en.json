@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP Server Manager",
+    "description": "MCP server management panel: add, edit, disable, or remove MCP servers from the GUI (written as mcp-client insert rows in the profile's cordis.patch.yml and hot-reloaded), browse registered tools, and expose mcp_* management tools to the agent; connection lifecycle is delegated to the official dsh-mcp-client."
+  }
+}

@@ -16,6 +16,7 @@ import type { McpManagerKey } from './locales.ts'
 export const dicts: Record<string, Record<McpManagerKey, string>> = {
   ja: {
     heading: 'MCP サーバー',
+    summaryLine: 'MCP サーバーレジストリを管理：サーバーの追加・編集・無効化・削除と、登録済みツールの閲覧。',
     introBefore: 'MCP サーバー接続を管理します。各サーバーは公式の',
     introMid: 'によってマウントされ、ツールは',
     introAfter: 'として登録されます。設定は profile patch に書き込まれ、HMR で即時反映されます。',
@@ -56,6 +57,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   de: {
     heading: 'MCP-Server',
+    summaryLine: 'Die MCP-Server-Registry verwalten: Server hinzufügen, bearbeiten, deaktivieren oder entfernen und registrierte Tools durchsehen.',
     introBefore: 'MCP-Serververbindungen verwalten. Jeder Server wird von der offiziellen',
     introMid: 'gemountet, wobei Tools unter',
     introAfter: 'registriert werden. Die Konfiguration wird in den Profile-Patch geschrieben und per HMR sofort wirksam.',
@@ -96,6 +98,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   fr: {
     heading: 'Serveurs MCP',
+    summaryLine: 'Gérer le registre des serveurs MCP : ajouter, modifier, désactiver ou supprimer des serveurs et parcourir les outils enregistrés.',
     introBefore: 'Gérez les connexions aux serveurs MCP. Chaque serveur est monté par le',
     introMid: 'officiel, et les outils sont enregistrés sous',
     introAfter: 'La configuration est écrite dans le patch du profil et appliquée en direct via HMR.',
@@ -136,6 +139,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   pt: {
     heading: 'Servidores MCP',
+    summaryLine: 'Gerenciar o registro de servidores MCP: adicionar, editar, desativar ou remover servidores e navegar pelas ferramentas registradas.',
     introBefore: 'Gerencie as conexões dos servidores MCP. Cada servidor é montado pelo',
     introMid: 'oficial, e as ferramentas são registradas sob',
     introAfter: 'A configuração é gravada no patch do perfil e aplicada ao vivo via HMR.',
@@ -176,6 +180,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   ko: {
     heading: 'MCP 서버',
+    summaryLine: 'MCP 서버 레지스트리 관리: 서버 추가·편집·비활성화·삭제 및 등록된 도구 둘러보기.',
     introBefore: 'MCP 서버 연결을 관리합니다. 각 서버는 공식',
     introMid: '에 의해 마운트되며, 도구는',
     introAfter: '로 등록됩니다. 설정은 profile patch에 기록되어 HMR로 즉시 적용됩니다.',
@@ -216,6 +221,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   ar: {
     heading: 'خوادم MCP',
+    summaryLine: 'إدارة سجل خوادم MCP: إضافة الخوادم وتعديلها وتعطيلها أو إزالتها واستعراض الأدوات المسجلة.',
     introBefore: 'إدارة اتصالات خوادم MCP. يتم تركيب كل خادم بواسطة',
     introMid: 'الرسمي، ويتم تسجيل الأدوات تحت',
     introAfter: 'تُكتب الإعدادات في تصحيح ملف التعريف (profile patch) وتُطبَّق فورًا عبر HMR.',
@@ -256,6 +262,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   hi: {
     heading: 'MCP सर्वर',
+    summaryLine: 'MCP सर्वर रजिस्ट्री प्रबंधित करें: सर्वर जोड़ें, संपादित करें, अक्षम करें या हटाएँ और पंजीकृत टूल देखें।',
     introBefore: 'MCP सर्वर कनेक्शन प्रबंधित करें। प्रत्येक सर्वर आधिकारिक',
     introMid: 'द्वारा माउंट किया जाता है, और टूल',
     introAfter: 'के अंतर्गत पंजीकृत होते हैं। कॉन्फ़िग profile patch में लिखा जाता है और HMR के माध्यम से तुरंत लागू होता है।',
@@ -296,6 +303,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   id: {
     heading: 'Server MCP',
+    summaryLine: 'Kelola registri server MCP: tambahkan, edit, nonaktifkan, atau hapus server dan telusuri alat terdaftar.',
     introBefore: 'Kelola koneksi server MCP. Setiap server dipasang oleh',
     introMid: 'resmi, dan alat didaftarkan di bawah',
     introAfter: 'Konfigurasi ditulis ke patch profil dan langsung berlaku melalui HMR.',
@@ -336,6 +344,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   tr: {
     heading: 'MCP Sunucuları',
+    summaryLine: 'MCP sunucu kayıt defterini yönetin: sunucu ekleyin, düzenleyin, devre dışı bırakın veya kaldırın ve kayıtlı araçlara göz atın.',
     introBefore: 'MCP sunucu bağlantılarını yönetin. Her sunucu resmi',
     introMid: 'tarafından bağlanır ve araçlar',
     introAfter: 'ile kaydedilir. Yapılandırma profil yamasına yazılır ve HMR ile anında uygulanır.',
@@ -376,6 +385,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   vi: {
     heading: 'Máy chủ MCP',
+    summaryLine: 'Quản lý danh bạ máy chủ MCP: thêm, sửa, tắt hoặc xóa máy chủ và duyệt các công cụ đã đăng ký.',
     introBefore: 'Quản lý kết nối máy chủ MCP. Mỗi máy chủ được gắn bởi',
     introMid: 'chính thức, và các công cụ được đăng ký dưới',
     introAfter: 'Cấu hình được ghi vào profile patch và áp dụng trực tiếp qua HMR.',
@@ -416,6 +426,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   th: {
     heading: 'เซิร์ฟเวอร์ MCP',
+    summaryLine: 'จัดการทะเบียนเซิร์ฟเวอร์ MCP: เพิ่ม แก้ไข ปิดใช้งาน หรือลบเซิร์ฟเวอร์ และดูเครื่องมือที่ลงทะเบียน',
     introBefore: 'จัดการการเชื่อมต่อเซิร์ฟเวอร์ MCP เซิร์ฟเวอร์แต่ละตัวถูกเมานต์โดย',
     introMid: 'อย่างเป็นทางการ และเครื่องมือลงทะเบียนภายใต้',
     introAfter: 'การกำหนดค่าถูกเขียนลงใน profile patch และนำไปใช้ทันทีผ่าน HMR',
@@ -456,6 +467,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   ru: {
     heading: 'Серверы MCP',
+    summaryLine: 'Управление реестром серверов MCP: добавление, изменение, отключение и удаление серверов, просмотр зарегистрированных инструментов.',
     introBefore: 'Управление подключениями к серверам MCP. Каждый сервер монтируется официальным',
     introMid: 'а инструменты регистрируются с префиксом',
     introAfter: 'Конфигурация записывается в patch профиля и применяется мгновенно через HMR.',
@@ -496,6 +508,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   it: {
     heading: 'Server MCP',
+    summaryLine: 'Gestisci il registro dei server MCP: aggiungi, modifica, disabilita o rimuovi server e sfoglia gli strumenti registrati.',
     introBefore: 'Gestisci le connessioni ai server MCP. Ogni server è montato dall’',
     introMid: 'ufficiale, e gli strumenti sono registrati sotto',
     introAfter: 'La configurazione viene scritta nel patch del profilo e applicata al volo tramite HMR.',
@@ -536,6 +549,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   nl: {
     heading: 'MCP-servers',
+    summaryLine: 'Beheer het MCP-serverregister: servers toevoegen, bewerken, uitschakelen of verwijderen en geregistreerde tools bekijken.',
     introBefore: 'Beheer MCP-serververbindingen. Elke server wordt gemount door de officiële',
     introMid: 'en tools worden geregistreerd onder',
     introAfter: 'De configuratie wordt naar de profile-patch geschreven en direct toegepast via HMR.',
@@ -576,6 +590,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   sv: {
     heading: 'MCP-servrar',
+    summaryLine: 'Hantera MCP-serverregistret: lägg till, redigera, inaktivera eller ta bort servrar och bläddra bland registrerade verktyg.',
     introBefore: 'Hantera MCP-serveranslutningar. Varje server monteras av den officiella',
     introMid: 'och verktyg registreras under',
     introAfter: 'Konfigurationen skrivs till profilpatchen och tillämpas direkt via HMR.',
@@ -616,6 +631,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   pl: {
     heading: 'Serwery MCP',
+    summaryLine: 'Zarządzaj rejestrem serwerów MCP: dodawaj, edytuj, wyłączaj lub usuwaj serwery i przeglądaj zarejestrowane narzędzia.',
     introBefore: 'Zarządzaj połączeniami serwerów MCP. Każdy serwer jest montowany przez oficjalny',
     introMid: 'a narzędzia są rejestrowane pod',
     introAfter: 'Konfiguracja jest zapisywana do poprawki profilu i stosowana na żywo przez HMR.',
@@ -656,6 +672,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   'zh-HK': {
     heading: 'MCP 伺服器',
+    summaryLine: '管理 MCP 伺服器註冊表：新增 / 編輯 / 停用 / 刪除伺服器設定，瀏覽已註冊工具。',
     introBefore: '管理 MCP 伺服器連線。每台伺服器由官方',
     introMid: '掛載，工具以',
     introAfter: '命名註冊。設定寫入 profile patch，HMR 即時生效。',
@@ -696,6 +713,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   'zh-TW': {
     heading: 'MCP 伺服器',
+    summaryLine: '管理 MCP 伺服器註冊表：新增 / 編輯 / 停用 / 刪除伺服器設定，瀏覽已註冊工具。',
     introBefore: '管理 MCP 伺服器連線。每台伺服器由官方',
     introMid: '掛載，工具以',
     introAfter: '命名註冊。設定寫入 profile patch，HMR 即時生效。',
@@ -736,6 +754,7 @@ export const dicts: Record<string, Record<McpManagerKey, string>> = {
   },
   'zh-MO': {
     heading: 'MCP 伺服器',
+    summaryLine: '管理 MCP 伺服器註冊表：新增 / 編輯 / 停用 / 刪除伺服器設定，瀏覽已註冊工具。',
     introBefore: '管理 MCP 伺服器連線。每台伺服器由官方',
     introMid: '掛載，工具以',
     introAfter: '命名註冊。設定寫入 profile patch，HMR 即時生效。',

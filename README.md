@@ -12,7 +12,7 @@
 本插件是注册表的「写配置层」+「状态/工具浏览层」，不自己拉连接。
 
 ```
-GUI(settings.section「MCP」) ──HTTP──> /api/mcp-manager ──读写──> profile cordis.patch.yml
+GUI(Plugins 页「dsh-mcp-manager」行配置卡片) ──HTTP──> /api/mcp-manager ──读写──> profile cordis.patch.yml
 Agent 面 mcp_* 工具 ─────────────────────────────┘        (mcp-client insert 行)
                                                               │ 配置 HMR 实时挂载
                                                               ▼
@@ -41,8 +41,8 @@ pnpm install
 ### 三件套
 
 ```powershell
-pnpm typecheck   # tsc --noEmit（src/ + tests/；src/client/ 由 tsdown 构建，不进 tsc）
-pnpm test        # vitest run（registry 单元测试，27 用例）
+pnpm typecheck   # tsc --noEmit（src/ + tests/ 全量；client 包类型经 paths 直指 dsh checkout 的 lib/types）
+pnpm test        # vitest run（registry + locales + row-key 单元测试）
 pnpm build       # tsdown 双 bundle：lib/index.mjs（Node half）+ lib/index.js（client half）
 ```
 
@@ -53,8 +53,9 @@ pnpm build       # tsdown 双 bundle：lib/index.mjs（Node half）+ lib/index.j
 | `src/registry.ts` | 服务器注册表：eemeli `yaml` Document API 读写 insert 行 + `loadOverlayPatches` 校验 + serverName 唯一 + entry-level `disabled` 字段 |
 | `src/tools.ts` | agent 面 `mcp_*` ×5 工具（defineTool，规范 JSON 输出） |
 | `src/index.ts` | Node half：`/api/mcp-manager` 路由 + `ctx.tools.schemas()` 过滤 + mcp 工具注册 |
-| `src/client/index.ts` | client half：`settings.section` 注册「MCP」面板 |
-| `src/client/Panel.tsx` | 面板 UI：服务器列表 + 增删改表单（内联卡片下方）+ 禁用/启用 + 工具浏览 |
+| `src/client/index.ts` | client half：`plugins.row.config` 注册 Plugins 页「dsh-mcp-manager」行配置卡片（key `@huanlin/dsh-plugin-mcp-manager#dsh-mcp-manager`，由 `row-key.ts` 常量派生） |
+| `src/client/row-key.ts` | 行配置 key 常量：包名 `#` 行 id 三方一致性（cordis.patch.yml 行 id / package.json 包名 / ROW_KEY），`tests/row-key.spec.ts` 守卫 |
+| `src/client/Panel.tsx` | 卡片 UI：summary 一行简介 + page 完整面板（服务器列表 + 增删改表单（内联卡片下方）+ 禁用/启用 + 工具浏览） |
 
 ### 数据模型
 
@@ -98,7 +99,8 @@ dsh plugin --profile web add "github:dsh-external/dsh-mcp-manager"
 
 ### 使用
 
-- **GUI**：设置页 → 「MCP」面板。
+- **GUI**：Plugins 页（插件列表）→ `@huanlin/dsh-plugin-mcp-manager` → `dsh-mcp-manager` 行 →
+  「配置」打开完整面板（行详情页的描述回退显示 summary 一行简介）。
   - 新增/编辑/删除服务器；编辑表单内联在对应卡片下方（不在全局底部）。
   - 禁用/启用服务器（不删除配置；禁用后 loader 跳过挂载，工具不注册，模型不可见）。
   - 点击「工具」展开该服务器的 `mcp__*` 工具列表（禁用状态下不可展开）。
@@ -129,7 +131,7 @@ README 明确警示：勿放长期密钥；部署隔离。P1 可接 `@deepseek-a
 - [x] **B2**：自带 `cordis.patch.yml`（insert 行 id/name 齐全）
 - [x] **B3**：patch 行 `name` 用包名 `@huanlin/dsh-plugin-mcp-manager`
 - [x] **F1**：`files` 含 `lib/` + `cordis.patch.yml`
-- [x] **F2**：`peerDependencies` 含 `@deepseek-ai/cordis` + `@deepseek-ai/*`（dsh-tools / dsh-llm / dsh-app-boot / dsh-client-ui-primitives / dsh-client-ui-slots / dsh-client-ui-renderer / dsh-client-locale / dsh-client-ui-settings，对齐 v0.1.2-alpha.1 的 client-runtime 拆分）
+- [x] **F2**：`peerDependencies` 含 `@deepseek-ai/cordis` + `@deepseek-ai/*`（dsh-tools / dsh-llm / dsh-app-boot / dsh-client-ui-primitives / dsh-client-ui-slots / dsh-client-ui-plugin-manager（type-only，`plugins.row.config` 契约）/ dsh-client-ui-renderer / dsh-client-locale，对齐 v0.1.7-rc.1）
 - [x] **F3**：typecheck / test / build 三 script 齐全（预构建策略：无 prepare，lib/ 入库）
 - [x] **A4**：Config 校验用 `validateServerConfig`（fail loud，携带字段名）
 - [x] **A6**：不导出 default

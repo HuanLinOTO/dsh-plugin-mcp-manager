@@ -14,7 +14,7 @@
  * 写该字段；启用时移除该字段，loader HMR 重新挂载实例。
  *
  * 架构（对齐开发计划 §1）：
- *   GUI(settings.section) ──HTTP──> /api/mcp-manager ──读写──> profile cordis.patch.yml
+ *   GUI(Plugins 页行配置卡片) ──HTTP──> /api/mcp-manager ──读写──> profile cordis.patch.yml
  *   Agent 面 mcp_* 工具 ─────────────────────────────┘        (mcp-client insert 行)
  *                                                                │ 配置 HMR 实时挂载
  *                                                                ▼

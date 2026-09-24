@@ -18,6 +18,7 @@
 /** All copy keys for the dsh-plugin-mcp-manager namespace. */
 export type McpManagerKey =
   | 'heading'
+  | 'summaryLine'
   | 'introBefore'
   | 'introMid'
   | 'introAfter'
@@ -62,6 +63,7 @@ export const NS = 'dsh-plugin-mcp-manager'
 /** English dictionary. */
 export const en: Record<McpManagerKey, string> = {
   heading: 'MCP Servers',
+  summaryLine: 'Manage the MCP server registry: add, edit, disable, or remove servers and browse registered tools.',
   introBefore: 'Manage MCP server connections. Each server is mounted by the official',
   introMid: 'and tools are registered under',
   introAfter: 'Config writes to the profile patch and applies live via HMR.',
@@ -104,6 +106,7 @@ export const en: Record<McpManagerKey, string> = {
 /** Chinese dictionary. */
 export const zh: Record<McpManagerKey, string> = {
   heading: 'MCP 服务器',
+  summaryLine: '管理 MCP 服务器注册表：新增 / 编辑 / 禁用 / 删除服务器配置，浏览已注册工具。',
   introBefore: '管理 MCP 服务器连接。每台服务器由官方',
   introMid: '挂载，工具以',
   introAfter: '命名注册。配置写入 profile patch，HMR 实时生效。',

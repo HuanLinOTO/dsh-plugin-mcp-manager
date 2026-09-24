@@ -1,5 +1,6 @@
 /**
- * MCP 管理面板（UI 对齐官方「模型」设置页设计语言）：
+ * MCP 管理面板（Plugins 页「dsh-mcp-manager」行配置卡片；UI 对齐官方
+ * 「模型」设置页设计语言）：
  * - 服务器列表：serverName + 传输标识 + 端点摘要 + 状态 Pill（connected/
  *   disconnected/disabled）+ 工具数；行内操作：编辑 / 禁用|启用 / 删除
  * - 新增/编辑表单：transport 切换（stdio ↔ streamable-http 字段组联动）；
@@ -8,7 +9,8 @@
  * - 工具浏览：点击服务器展开其 mcp__ 工具列表（名称 + 描述），只读
  * - 禁用：entry-level `disabled: true` 字段（config 保留，loader 跳过挂载，
  *   工具不注册→模型不可见），与删除语义分离
- * 全部 token 走 --dsw-alias-*；零 CSS 依赖（inline 样式）。
+ * 页面自画标题/图标/面包屑；本贡献只画内容（summary = 一行简介纯文本，
+ * page = 完整面板）。全部 token 走 --dsw-alias-*；零 CSS 依赖（inline 样式）。
  *
  * 文案走 DSH locale（`dsh-plugin-mcp-manager` 命名空间）：slot 渲染器绑定
  * 语言座位 `t`（跟随 DSH zh/en，better-locale 覆盖生效时优先覆盖文本）；
@@ -16,6 +18,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Input, Pill } from '@deepseek-ai/dsh-client-ui-primitives'
+// Type-only: pulls the SlotMap merge declaring 'plugins.row.config' so
+// PropsRuntime<'plugins.row.config'> resolves (declared by ui-plugin-manager).
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { makeT, zh, type McpManagerTranslate } from './locales.ts'
 
 /** 服务器行（GET /servers）。 */
@@ -271,10 +277,20 @@ function ServerEditor(props: EditorProps): React.ReactNode {
 }
 
 /**
- * 设置页面板主体。`t` 是 slot 系统绑定 locale 座位后的翻译函数（跟随 DSH
- * zh/en + better-locale 覆盖）；缺省回退到 zh 字典，供 slot 外直挂使用。
+ * 行配置卡片主体。owner props 由 Plugins 页下发（`view: 'summary'` 画一行
+ * 简介——仅当行没有自身描述时页面才问 summary；`view: 'page'` 画完整面板；
+ * `form` 对本插件恒为 undefined，不读）。`t` 是 slot 系统绑定 locale 座位
+ * 后的翻译函数（跟随 DSH zh/en + better-locale 覆盖）；缺省回退到 zh
+ * 字典，供 slot 外直挂使用。
  */
-export function McpPanel({ t = makeT(zh) }: { t?: McpManagerTranslate }): React.ReactNode {
+export type McpPanelProps = PropsRuntime<'plugins.row.config'> & {
+  t?: McpManagerTranslate
+}
+
+export function McpPanel({ view, t = makeT(zh) }: McpPanelProps): React.ReactNode {
+  // summary 渲染进行详情页的描述 <p> 内：只返回一行纯文本，不拉数据。
+  if (view === 'summary') return t('summaryLine')
+
   const [servers, setServers] = useState<ServerRow[]>([])
   const [toolGroups, setToolGroups] = useState<ToolGroups>({})
   const [error, setError] = useState<string | undefined>(undefined)
