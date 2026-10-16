@@ -131,7 +131,7 @@ README 明确警示：勿放长期密钥；部署隔离。P1 可接 `@deepseek-a
 - [x] **B2**：自带 `cordis.patch.yml`（insert 行 id/name 齐全）
 - [x] **B3**：patch 行 `name` 用包名 `@huanlin/dsh-plugin-mcp-manager`
 - [x] **F1**：`files` 含 `lib/` + `cordis.patch.yml`
-- [x] **F2**：`peerDependencies` 含 `@deepseek-ai/cordis` + `@deepseek-ai/*`（dsh-tools / dsh-llm / dsh-app-boot / dsh-client-ui-primitives / dsh-client-ui-slots / dsh-client-ui-plugin-manager（type-only，`plugins.row.config` 契约）/ dsh-client-ui-renderer / dsh-client-locale，对齐 v0.1.7-rc.1）
+- [x] **F2**：`peerDependencies` 含 `@deepseek-ai/cordis` + `@deepseek-ai/*`（dsh-tools / dsh-llm / dsh-app-boot / dsh-client-ui-primitives / dsh-client-ui-slots / dsh-client-ui-plugin-manager（type-only，`plugins.row.config` 契约）/ dsh-client-ui-renderer / dsh-client-locale，对齐 v0.2.1-alpha.5）
 - [x] **F3**：typecheck / test / build 三 script 齐全（预构建策略：无 prepare，lib/ 入库）
 - [x] **A4**：Config 校验用 `validateServerConfig`（fail loud，携带字段名）
 - [x] **A6**：不导出 default
