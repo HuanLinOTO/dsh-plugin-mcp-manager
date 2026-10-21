@@ -23,6 +23,11 @@ GUI 状态/工具浏览 <──ctx.tools.schemas() 过滤 mcp__──┘
 每台 MCP 服务器 = profile `cordis.patch.yml` 中一条 `name: '@deepseek-ai/dsh-mcp-client'` 的
 insert 行。配置 HMR 实时挂载/卸载/热替换，无需重启 web。
 
+目标文件取自 launcher 提供的 `profileContext.patchPath`——即当前 `--profile` 真正加载的那份
+`cordis.patch.yml`，不是硬编码的 `profiles/web`。因此 web / desktop / 自建 profile 各写各的。
+若进程不是由 dsh launcher 启动（没有 `profileContext`），插件不注册路由与工具并打印一条警告：
+写哪份 patch 都只能是猜测，宁可不动作。
+
 **禁用 ≠ 删除**：禁用写入 entry-level `disabled: true`（与 `id`/`name`/`config` 同级），
 loader 跳过挂载该 mcp-client 实例 → 工具不注册（模型不可见），config 原样保留在 patch
 文件中。重新启用只需移除该字段，loader HMR 重新挂载。适合「暂时不让模型用某台服务器」

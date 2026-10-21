@@ -6,6 +6,8 @@
  * 配置 HMR 实时挂载/卸载/热替换，连接生命周期完全委托官方 mcp-client。
  *
  * 实现要点（对照开发计划 §3）：
+ * - 目标文件由调用方给出（官方 launcher 的 `profileContext.patchPath`），
+ *   注册表不推断 profile 目录：`--profile` 可以是任意名字。
  * - 用 eemeli `yaml` 的 Document API（parseDocument → 改节点 → toString）
  *   而非行级字符串拼接：config 嵌套深，且需保留 `!!js` 表达式与其他行的
  *   注释/结构（已实证 eemeli yaml 往返保留 !!js + 注释，js-yaml 默认 schema
@@ -19,7 +21,6 @@
  * 零源码 patch：只读写 profile 的用户 patch 层（官方 HMR-watched 文件）。
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { parseDocument, YAMLMap, YAMLSeq, type Document } from 'yaml'
 
@@ -32,23 +33,18 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 /** 官方 app-boot 的 patch 校验器（可选 peer：未装时降级为仅可解析检查）。 */
 type LoadOverlayPatches = (binName: string, file: string) => unknown[]
 
-/* ---------------- 路径解析（对齐 plugin-console） ---------------- */
+/* ---------------- 目标文件 ---------------- */
 
-/** 解析 DSH_HOME（官方 dsh-paths 语义）。 */
-export function resolveDshHome(): string {
-  return process.env.DSH_HOME?.trim() !== '' && process.env.DSH_HOME !== undefined
-    ? process.env.DSH_HOME
-    : join(process.env.HOME ?? process.env.USERPROFILE ?? '/tmp', '.dsh')
-}
-
-/** 当前 profile（web 默认）目录。 */
-export function profileWebDir(): string {
-  return join(resolveDshHome(), 'profiles', 'web')
-}
-
-/** 当前 profile 的 cordis.patch.yml（用户 patch 层，配置 HMR watched）。 */
-export function profilePatchPath(): string {
-  return join(profileWebDir(), 'cordis.patch.yml')
+/**
+ * 注册表定位。目标 patch 文件由调用方给出——官方 launcher 的
+ * `profileContext.patchPath` 就是当前被加载的那个 profile——插件不自行
+ * 推断 profile 目录（`--profile` 可以是任意名字）。
+ */
+export interface RegistryOptions {
+  /** 当前 profile 的 `cordis.patch.yml` 绝对路径（官方 `profileContext.patchPath`）。 */
+  patchPath: string
+  /** 可选官方写后校验器（@deepseek-ai/dsh-app-boot 提供）。 */
+  loadOverlayPatches?: LoadOverlayPatches
 }
 
 /* ---------------- 数据模型 ---------------- */
@@ -93,6 +89,29 @@ export interface McpServerRow {
    * 但配置保留在 patch 文件中。重新启用只需移除该字段。
    */
   disabled: boolean
+}
+
+/**
+ * 一个注册表实例：所有读写都落在创建时给定的 patch 文件上。
+ * 由 {@link createRegistry} 按当前 profile 构造。
+ */
+export interface McpRegistry {
+  /** 读全部 MCP 服务器行（config 块缺失/结构异常的行被跳过）。 */
+  listServers(): McpServerRow[]
+  /** 读单个服务器行（按 id）。不存在返回 undefined。 */
+  getServer(id: string): McpServerRow | undefined
+  /** 新增服务器（校验 + 写 insert 行）。返回新增行 id。 */
+  addServer(config: McpServerConfig, opts?: { id?: string }): string
+  /** 整块替换 config（不深合并，与 loader patch 语义一致）。 */
+  updateServer(id: string, config: McpServerConfig): void
+  /** 删除行（空 insert 块一并删除）。返回是否有行被删除。 */
+  deleteServer(id: string): boolean
+  /** 设置 entry-level `disabled` 字段（config 保留）。返回行是否存在。 */
+  setServerDisabled(id: string, disabled: boolean): boolean
+  /** patch 文件是否可读（存在且可解析为 patch 列表）。 */
+  isPatchReadable(): boolean
+  /** 备份 patch 文件到 .bak。返回备份路径或 null。 */
+  backupPatch(): string | null
 }
 
 /** 校验错误（携带字段名便于 UI 定位）。 */
@@ -178,11 +197,10 @@ function emptyPatchDocument(): Document.Parsed {
 }
 
 /** 读取 patch 文件的 Document（保留注释/!!js）；文件不存在返回空文档。 */
-function readPatchDocument(): Document.Parsed {
-  const file = profilePatchPath()
+function readPatchDocument(options: RegistryOptions): Document.Parsed {
   let content: string
   try {
-    content = readFileSync(file, 'utf8')
+    content = readFileSync(options.patchPath, 'utf8')
   } catch {
     // 文件不存在：返回一个空列表文档（调用方按需 append）。
     return emptyPatchDocument()
@@ -240,8 +258,8 @@ function configToData(config: McpServerConfig): Record<string, unknown> {
  * 读全部 MCP 服务器行。配置块缺失/结构异常的行被跳过（不抛——读路径容忍）。
  * 返回每行的 id 与解析出的 config（仅含存在的字段）+ entry-level disabled 标志。
  */
-export function listServers(): McpServerRow[] {
-  const doc = readPatchDocument()
+function listServers(options: RegistryOptions): McpServerRow[] {
+  const doc = readPatchDocument(options)
   const rows = collectMcpRows(doc)
   const out: McpServerRow[] = []
   for (const { row, id } of rows) {
@@ -266,13 +284,13 @@ export function listServers(): McpServerRow[] {
 /**
  * 读单个服务器行（按 id）。不存在返回 undefined。
  */
-export function getServer(id: string): McpServerRow | undefined {
-  return listServers().find(r => r.id === id)
+function getServer(options: RegistryOptions, id: string): McpServerRow | undefined {
+  return listServers(options).find(r => r.id === id)
 }
 
 /** 写回 patch 文件并校验：可选 app-boot 校验器在场则用之，否则仅保证可解析。 */
-function writeAndValidate(doc: Document.Parsed, loadOverlayPatches?: LoadOverlayPatches): void {
-  const file = profilePatchPath()
+function writeAndValidate(doc: Document.Parsed, options: RegistryOptions): void {
+  const file = options.patchPath
   const text = doc.toString()
   // 读旧内容用于失败回滚（文件不存在则为 null）。
   let previous: string | null = null
@@ -285,6 +303,7 @@ function writeAndValidate(doc: Document.Parsed, loadOverlayPatches?: LoadOverlay
   writeFileSync(file, text)
   // 写后校验：用官方 loadOverlayPatches（若装了 app-boot）确认可解析+结构合法。
   // 失败则回滚到旧内容（防写坏导致 web 启动失败）。
+  const loadOverlayPatches = options.loadOverlayPatches
   if (loadOverlayPatches !== undefined) {
     try {
       loadOverlayPatches('dsh-mcp-manager', file)
@@ -315,21 +334,22 @@ export function resolveLoadOverlayPatches(): LoadOverlayPatches | undefined {
 
 /**
  * 新增一个 MCP 服务器。校验配置 + serverName 唯一 → 写 insert 行。
+ * @param options 目标 patch 文件（当前 profile）与可选官方校验器。
  * @param config 服务器配置（纯数据）。
- * @param id 可选行 id；默认 mcp-<serverName>。
- * @param loadOverlayPatches 可选官方校验器（app-boot 提供）。
+ * @param opts 可选行 id；默认 mcp-<serverName>。
  * @returns 新增行的 id。
  * @throws RegistryError 配置非法 / serverName 重复 / id 重复 / 写后校验失败。
  */
-export function addServer(
+function addServer(
+  options: RegistryOptions,
   config: McpServerConfig,
-  opts?: { id?: string; loadOverlayPatches?: LoadOverlayPatches; previousText?: string },
+  opts?: { id?: string },
 ): string {
   validateServerConfig(config)
   const id = (opts?.id ?? rowIdFor(config.serverName)).trim()
   if (id.length === 0) throw new RegistryError('id', 'id must be non-empty')
 
-  const doc = readPatchDocument()
+  const doc = readPatchDocument(options)
   const existing = collectMcpRows(doc)
   // serverName 唯一（跨所有 mcp-client 行）。
   if (existing.some(r => {
@@ -366,7 +386,7 @@ export function addServer(
   row.set('config', doc.createNode(configToData(config)))
   targetBlock.add(row)
 
-  writeAndValidate(doc, opts?.loadOverlayPatches)
+  writeAndValidate(doc, options)
   console.log(`[dsh-mcp-manager] added server ${id} (serverName=${config.serverName})`)
   return id
 }
@@ -375,13 +395,13 @@ export function addServer(
  * 更新一个服务器（整块替换 config）。serverName 可改（需保持唯一）。
  * @throws RegistryError 配置非法 / id 不存在 / serverName 与他人冲突 / 写后校验失败。
  */
-export function updateServer(
+function updateServer(
+  options: RegistryOptions,
   id: string,
   config: McpServerConfig,
-  opts?: { loadOverlayPatches?: LoadOverlayPatches },
 ): void {
   validateServerConfig(config)
-  const doc = readPatchDocument()
+  const doc = readPatchDocument(options)
   const rows = collectMcpRows(doc)
   const target = rows.find(r => r.id === id)
   if (target === undefined) {
@@ -398,7 +418,7 @@ export function updateServer(
   }
   // 整块替换 config（不深合并，与 loader patch 语义一致）。
   target.row.set('config', doc.createNode(configToData(config)))
-  writeAndValidate(doc, opts?.loadOverlayPatches)
+  writeAndValidate(doc, options)
   console.log(`[dsh-mcp-manager] updated server ${id}`)
 }
 
@@ -406,11 +426,11 @@ export function updateServer(
  * 删除一个服务器行。空掉的 insert 块一并删除（空 insert 是脏 patch）。
  * @returns true 删除成功；false 行不存在。
  */
-export function deleteServer(
+function deleteServer(
+  options: RegistryOptions,
   id: string,
-  opts?: { loadOverlayPatches?: LoadOverlayPatches },
 ): boolean {
-  const doc = readPatchDocument()
+  const doc = readPatchDocument(options)
   const rows = collectMcpRows(doc)
   const target = rows.find(r => r.id === id)
   if (target === undefined) return false
@@ -429,15 +449,15 @@ export function deleteServer(
       }
     }
   }
-  writeAndValidate(doc, opts?.loadOverlayPatches)
+  writeAndValidate(doc, options)
   console.log(`[dsh-mcp-manager] deleted server ${id}`)
   return true
 }
 
 /** patch 文件是否可读（存在且可解析为 patch 列表）。 */
-export function isPatchReadable(): boolean {
+function isPatchReadable(options: RegistryOptions): boolean {
   try {
-    const doc = readPatchDocument()
+    const doc = readPatchDocument(options)
     void doc
     return true
   } catch {
@@ -454,12 +474,12 @@ export function isPatchReadable(): boolean {
  * @returns true 设置成功；false 行不存在。
  * @throws RegistryError 写后校验失败（已回滚）。
  */
-export function setServerDisabled(
+function setServerDisabled(
+  options: RegistryOptions,
   id: string,
   disabled: boolean,
-  opts?: { loadOverlayPatches?: LoadOverlayPatches },
 ): boolean {
-  const doc = readPatchDocument()
+  const doc = readPatchDocument(options)
   const rows = collectMcpRows(doc)
   const target = rows.find(r => r.id === id)
   if (target === undefined) return false
@@ -471,14 +491,34 @@ export function setServerDisabled(
       target.row.delete('disabled')
     }
   }
-  writeAndValidate(doc, opts?.loadOverlayPatches)
+  writeAndValidate(doc, options)
   console.log(`[dsh-mcp-manager] set server ${id} disabled=${disabled}`)
   return true
 }
 
+/* ---------------- 工厂 ---------------- */
+
+/**
+ * 构造一个绑定到 {@link RegistryOptions.patchPath} 的注册表实例。
+ * @param options 目标 patch 文件（当前 profile 的 `profileContext.patchPath`）。
+ * @returns 落盘到该文件的读写方法集合。
+ */
+export function createRegistry(options: RegistryOptions): McpRegistry {
+  return {
+    listServers: () => listServers(options),
+    getServer: id => getServer(options, id),
+    addServer: (config, opts) => addServer(options, config, opts),
+    updateServer: (id, config) => updateServer(options, id, config),
+    deleteServer: id => deleteServer(options, id),
+    setServerDisabled: (id, disabled) => setServerDisabled(options, id, disabled),
+    isPatchReadable: () => isPatchReadable(options),
+    backupPatch: () => backupPatch(options),
+  }
+}
+
 /** 备份 patch 文件到 .bak（写前调用，防写坏）。返回备份路径或 null。 */
-export function backupPatch(): string | null {
-  const file = profilePatchPath()
+function backupPatch(options: RegistryOptions): string | null {
+  const file = options.patchPath
   if (!existsSync(file)) return null
   const bak = `${file}.bak`
   try {

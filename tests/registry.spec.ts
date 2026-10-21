@@ -2,51 +2,45 @@
  * registry 单元测试：覆盖增删改、serverName 唯一、非法配置拒绝、
  * !!js/注释保留、空 insert 块清理、写后校验回滚。
  *
- * 用 DSH_HOME 环境变量隔离到 tmp 目录，绝不触碰真实 profile。
+ * 每个用例的 patch 文件由测试显式给出（临时目录），绝不触碰真实 profile。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import {
-  listServers,
-  getServer,
-  addServer,
-  updateServer,
-  deleteServer,
-  setServerDisabled,
+  createRegistry,
   validateServerConfig,
   rowIdFor,
   RegistryError,
-  profilePatchPath,
+  type McpRegistry,
   type McpServerConfig,
 } from '../src/registry.ts'
 
-let tmpHome: string
-let origDshHome: string | undefined
+let tmpDir: string
+let patchPath: string
+let reg: McpRegistry
 
-function setTmpHome(): void {
-  tmpHome = mkdtempSync(join(tmpdir(), 'mcp-mgr-test-'))
-  mkdirSync(join(tmpHome, 'profiles', 'web'), { recursive: true })
-  origDshHome = process.env.DSH_HOME
-  process.env.DSH_HOME = tmpHome
+/** 每个用例一个临时 patch 文件——注册表的目标文件由调用方显式给出。 */
+function setUpRegistry(): void {
+  tmpDir = mkdtempSync(join(tmpdir(), 'mcp-mgr-test-'))
+  patchPath = join(tmpDir, 'cordis.patch.yml')
+  reg = createRegistry({ patchPath })
 }
 
-function restoreHome(): void {
-  if (origDshHome === undefined) delete process.env.DSH_HOME
-  else process.env.DSH_HOME = origDshHome
-  rmSync(tmpHome, { recursive: true, force: true })
+function tearDownRegistry(): void {
+  rmSync(tmpDir, { recursive: true, force: true })
 }
 
 /** 写一个初始 patch 文件。 */
 function writePatch(content: string): void {
-  writeFileSync(profilePatchPath(), content)
+  writeFileSync(patchPath, content)
 }
 
 /** 读当前 patch 文件。 */
 function readPatch(): string {
-  return readFileSync(profilePatchPath(), 'utf8')
+  return readFileSync(patchPath, 'utf8')
 }
 
 const stdioServer: McpServerConfig = {
@@ -103,13 +97,13 @@ describe('rowIdFor', () => {
 })
 
 describe('registry CRUD', () => {
-  beforeEach(setTmpHome)
-  afterEach(restoreHome)
+  beforeEach(setUpRegistry)
+  afterEach(tearDownRegistry)
 
   it('addServer writes an insert row and listServers reads it back', () => {
-    const id = addServer(stdioServer)
+    const id = reg.addServer(stdioServer)
     expect(id).toBe('mcp-github')
-    const rows = listServers()
+    const rows = reg.listServers()
     expect(rows).toHaveLength(1)
     expect(rows[0]!.id).toBe('mcp-github')
     expect(rows[0]!.name).toBe('@deepseek-ai/dsh-mcp-client')
@@ -118,51 +112,51 @@ describe('registry CRUD', () => {
   })
 
   it('getServer returns undefined for missing id', () => {
-    expect(getServer('nope')).toBeUndefined()
+    expect(reg.getServer('nope')).toBeUndefined()
   })
 
   it('addServer rejects duplicate serverName', () => {
-    addServer(stdioServer)
-    expect(() => addServer({ ...stdioServer, command: 'other' })).toThrow(RegistryError)
+    reg.addServer(stdioServer)
+    expect(() => reg.addServer({ ...stdioServer, command: 'other' })).toThrow(RegistryError)
   })
 
   it('addServer rejects duplicate id', () => {
-    addServer(stdioServer)
-    expect(() => addServer({ ...stdioServer, serverName: 'other', command: 'x' }, { id: 'mcp-github' })).toThrow(RegistryError)
+    reg.addServer(stdioServer)
+    expect(() => reg.addServer({ ...stdioServer, serverName: 'other', command: 'x' }, { id: 'mcp-github' })).toThrow(RegistryError)
   })
 
   it('updateServer replaces config block', () => {
-    addServer(stdioServer)
-    updateServer('mcp-github', { ...stdioServer, command: 'docker', args: ['run', 'mcp'] })
-    const row = getServer('mcp-github')!
+    reg.addServer(stdioServer)
+    reg.updateServer('mcp-github', { ...stdioServer, command: 'docker', args: ['run', 'mcp'] })
+    const row = reg.getServer('mcp-github')!
     expect(row.config.command).toBe('docker')
     expect(row.config.args).toEqual(['run', 'mcp'])
   })
 
   it('updateServer allows serverName change if unique', () => {
-    addServer(stdioServer)
-    updateServer('mcp-github', { ...stdioServer, serverName: 'github2' })
-    expect(getServer('mcp-github')!.config.serverName).toBe('github2')
+    reg.addServer(stdioServer)
+    reg.updateServer('mcp-github', { ...stdioServer, serverName: 'github2' })
+    expect(reg.getServer('mcp-github')!.config.serverName).toBe('github2')
   })
 
   it('updateServer rejects serverName colliding with another', () => {
-    addServer(stdioServer)
-    addServer({ ...httpServer })
-    expect(() => updateServer('mcp-exa', { ...httpServer, serverName: 'github' })).toThrow(RegistryError)
+    reg.addServer(stdioServer)
+    reg.addServer({ ...httpServer })
+    expect(() => reg.updateServer('mcp-exa', { ...httpServer, serverName: 'github' })).toThrow(RegistryError)
   })
 
   it('updateServer throws on missing id', () => {
-    expect(() => updateServer('nope', stdioServer)).toThrow(RegistryError)
+    expect(() => reg.updateServer('nope', stdioServer)).toThrow(RegistryError)
   })
 
   it('deleteServer removes the row', () => {
-    addServer(stdioServer)
-    expect(deleteServer('mcp-github')).toBe(true)
-    expect(listServers()).toHaveLength(0)
+    reg.addServer(stdioServer)
+    expect(reg.deleteServer('mcp-github')).toBe(true)
+    expect(reg.listServers()).toHaveLength(0)
   })
 
   it('deleteServer returns false for missing id', () => {
-    expect(deleteServer('nope')).toBe(false)
+    expect(reg.deleteServer('nope')).toBe(false)
   })
 
   it('deleteServer cleans up empty insert block', () => {
@@ -174,15 +168,15 @@ describe('registry CRUD', () => {
         transport: stdio
         command: npx
 `)
-    deleteServer('mcp-github')
+    reg.deleteServer('mcp-github')
     const after = readPatch()
     expect(after).not.toContain('insert')
   })
 })
 
 describe('preservation of !!js and comments', () => {
-  beforeEach(setTmpHome)
-  afterEach(restoreHome)
+  beforeEach(setUpRegistry)
+  afterEach(tearDownRegistry)
 
   it('preserves !!js expressions and comments in other rows', () => {
     writePatch(`# header comment
@@ -199,7 +193,7 @@ describe('preservation of !!js and comments', () => {
     baseURL: 'http://x:18000'
 `)
     // Add a second MCP server — must not disturb existing !!js/comments.
-    addServer(httpServer)
+    reg.addServer(httpServer)
     const after = readPatch()
     expect(after).toContain('!!js process.cwd()')
     expect(after).toContain('# inline comment')
@@ -218,7 +212,7 @@ describe('preservation of !!js and comments', () => {
         transport: stdio
         command: npx
 `)
-    updateServer('mcp-github', { ...stdioServer, command: 'docker' })
+    reg.updateServer('mcp-github', { ...stdioServer, command: 'docker' })
     const after = readPatch()
     // 文档级注释保留；config 整块替换（不深合并，§3 语义），旧 config 块内
     // 的行内注释随之丢失——这是预期行为（README 说明）。
@@ -229,36 +223,36 @@ describe('preservation of !!js and comments', () => {
 })
 
 describe('missing file handling', () => {
-  beforeEach(setTmpHome)
-  afterEach(restoreHome)
+  beforeEach(setUpRegistry)
+  afterEach(tearDownRegistry)
 
   it('listServers returns [] when patch file absent', () => {
-    expect(listServers()).toEqual([])
+    expect(reg.listServers()).toEqual([])
   })
 
   it('addServer creates the file when absent', () => {
-    addServer(stdioServer)
+    reg.addServer(stdioServer)
     expect(readPatch()).toContain('mcp-github')
   })
 
   it('handles a comment-only / null patch file', () => {
     writePatch(`# just a comment, no list`)
-    expect(listServers()).toEqual([])
-    addServer(stdioServer)
-    expect(listServers()).toHaveLength(1)
+    expect(reg.listServers()).toEqual([])
+    reg.addServer(stdioServer)
+    expect(reg.listServers()).toHaveLength(1)
   })
 
   it('handles the [] template file', () => {
     writePatch(`[]`)
-    expect(listServers()).toEqual([])
-    addServer(stdioServer)
-    expect(listServers()).toHaveLength(1)
+    expect(reg.listServers()).toEqual([])
+    reg.addServer(stdioServer)
+    expect(reg.listServers()).toHaveLength(1)
   })
 })
 
 describe('multiple mcp servers in one insert block', () => {
-  beforeEach(setTmpHome)
-  afterEach(restoreHome)
+  beforeEach(setUpRegistry)
+  afterEach(tearDownRegistry)
 
   it('appends to an existing insert block with other mcp rows', () => {
     writePatch(`- insert:
@@ -269,19 +263,19 @@ describe('multiple mcp servers in one insert block', () => {
         transport: stdio
         command: npx
 `)
-    addServer(httpServer)
-    const rows = listServers()
+    reg.addServer(httpServer)
+    const rows = reg.listServers()
     expect(rows.map(r => r.id).sort()).toEqual(['mcp-exa', 'mcp-github'])
   })
 })
 
 describe('setServerDisabled', () => {
-  beforeEach(setTmpHome)
-  afterEach(restoreHome)
+  beforeEach(setUpRegistry)
+  afterEach(tearDownRegistry)
 
   it('sets disabled=true at entry level (sibling of id/name/config)', () => {
-    addServer(stdioServer)
-    const ok = setServerDisabled('mcp-github', true)
+    reg.addServer(stdioServer)
+    const ok = reg.setServerDisabled('mcp-github', true)
     expect(ok).toBe(true)
     const after = readPatch()
     // disabled 字段在 entry level，不在 config 块内。
@@ -292,9 +286,9 @@ describe('setServerDisabled', () => {
   })
 
   it('listServers reads disabled state back', () => {
-    addServer(stdioServer)
-    setServerDisabled('mcp-github', true)
-    const rows = listServers()
+    reg.addServer(stdioServer)
+    reg.setServerDisabled('mcp-github', true)
+    const rows = reg.listServers()
     expect(rows).toHaveLength(1)
     expect(rows[0]!.disabled).toBe(true)
     // config 仍可读。
@@ -302,32 +296,32 @@ describe('setServerDisabled', () => {
   })
 
   it('listServers defaults disabled=false when field absent', () => {
-    addServer(stdioServer)
-    const rows = listServers()
+    reg.addServer(stdioServer)
+    const rows = reg.listServers()
     expect(rows[0]!.disabled).toBe(false)
   })
 
   it('enabling removes the disabled field (clean, no disabled: false)', () => {
-    addServer(stdioServer)
-    setServerDisabled('mcp-github', true)
-    setServerDisabled('mcp-github', false)
+    reg.addServer(stdioServer)
+    reg.setServerDisabled('mcp-github', true)
+    reg.setServerDisabled('mcp-github', false)
     const after = readPatch()
     expect(after).not.toMatch(/disabled/)
-    const rows = listServers()
+    const rows = reg.listServers()
     expect(rows[0]!.disabled).toBe(false)
   })
 
   it('enabling an already-enabled server is a noop (idempotent)', () => {
-    addServer(stdioServer)
+    reg.addServer(stdioServer)
     const before = readPatch()
-    setServerDisabled('mcp-github', false)
+    reg.setServerDisabled('mcp-github', false)
     const after = readPatch()
     expect(after).toBe(before)
   })
 
   it('returns false for missing id', () => {
-    addServer(stdioServer)
-    expect(setServerDisabled('nope', true)).toBe(false)
+    reg.addServer(stdioServer)
+    expect(reg.setServerDisabled('nope', true)).toBe(false)
   })
 
   it('preserves !!js expressions and comments in other rows', () => {
@@ -341,7 +335,7 @@ describe('setServerDisabled', () => {
         command: npx
         cwd: !!js process.cwd()   # inline comment
 `)
-    setServerDisabled('mcp-github', true)
+    reg.setServerDisabled('mcp-github', true)
     const after = readPatch()
     expect(after).toContain('!!js process.cwd()')
     expect(after).toContain('# inline comment')
@@ -350,13 +344,34 @@ describe('setServerDisabled', () => {
   })
 
   it('disabled field appears between name and config when set (entry-level, not in config)', () => {
-    addServer(stdioServer)
-    setServerDisabled('mcp-github', true)
-    const rows = listServers()
+    reg.addServer(stdioServer)
+    reg.setServerDisabled('mcp-github', true)
+    const rows = reg.listServers()
     // 读路径：disabled 是 entry-level 字段，不在 config 内。
     expect(rows[0]!.disabled).toBe(true)
     expect(rows[0]!.config.serverName).toBe('github')
     // config 内不应有 disabled 字段（McpServerConfig 不含此字段）。
     expect((rows[0]!.config as unknown as Record<string, unknown>).disabled).toBeUndefined()
+  })
+})
+describe('registry binding', () => {
+  beforeEach(setUpRegistry)
+  afterEach(tearDownRegistry)
+
+  it('two registries write to their own patch file and do not interfere', () => {
+    const otherDir = mkdtempSync(join(tmpdir(), 'mcp-mgr-other-'))
+    const otherPath = join(otherDir, 'cordis.patch.yml')
+    const other = createRegistry({ patchPath: otherPath })
+    try {
+      reg.addServer(stdioServer)
+      other.addServer({ ...stdioServer, serverName: 'other', command: 'x' })
+      expect(reg.listServers().map(r => r.config.serverName)).toEqual(['github'])
+      expect(other.listServers().map(r => r.config.serverName)).toEqual(['other'])
+      // 目标文件就是构造时给的那份，与进程环境（DSH_HOME / profile 名）无关。
+      expect(readPatch()).toContain('mcp-github')
+      expect(readFileSync(otherPath, 'utf8')).toContain('mcp-other')
+    } finally {
+      rmSync(otherDir, { recursive: true, force: true })
+    }
   })
 })

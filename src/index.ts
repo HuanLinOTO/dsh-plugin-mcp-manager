@@ -23,14 +23,11 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  listServers,
-  addServer,
-  updateServer,
-  deleteServer,
-  setServerDisabled,
+  createRegistry,
   resolveLoadOverlayPatches,
   RegistryError,
   type McpServerConfig,
+  type McpRegistry,
 } from './registry.ts'
 import { createMcpTools } from './tools.ts'
 
@@ -41,6 +38,21 @@ interface WebServerLike {
     path: string
     handler: (req: unknown, res: { statusCode: number; setHeader(k: string, v: string): void; end(body: string): void }) => void | Promise<void>
   }): () => void
+}
+
+/** 官方 launcher 提供的当前 profile 位置（`profileContext` 中被用到的字段）。 */
+interface ProfileLocation {
+  /** profile 名（`dsh --profile <name>`）。 */
+  readonly name: string
+  /** 当前 profile 的 `cordis.patch.yml` 绝对路径。 */
+  readonly patchPath: string
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** 仅由 dsh launcher 在 profile 内 provide；手工组装 cordis.yml 时不存在。 */
+    profileContext?: ProfileLocation
+  }
 }
 
 /** Cordis 插件名。 */
@@ -94,8 +106,19 @@ function computeStatus(
 /** 注册控制台路由 + agent 工具。 */
 export function apply(ctx: ManagerCtx): void {
   ctx.effect(() => {
+    // 目标 patch 文件取自 launcher 提供的 profileContext：`--profile` 是任意名字，
+    // 自己推断 profile 目录会写到当前进程并不加载的那份文件上。
+    const profile = ctx.get('profileContext')
+    if (profile === undefined) {
+      console.warn('[dsh-mcp-manager] profileContext 不可用（未经 dsh launcher 启动的 profile）：跳过 MCP 注册表读写')
+      return () => {}
+    }
     // 官方 patch 校验器（可选 peer：app-boot 提供时启用写后校验+回滚）。
-    const loadOverlayPatches = resolveLoadOverlayPatches()
+    const registry: McpRegistry = createRegistry({
+      patchPath: profile.patchPath,
+      loadOverlayPatches: resolveLoadOverlayPatches(),
+    })
+    console.log(`[dsh-mcp-manager] profile=${profile.name} patch=${profile.patchPath}`)
 
     /**
      * 各 serverName 最近一次「写配置」的时间戳（add/update）。用于推断「连接中」
@@ -116,26 +139,26 @@ export function apply(ctx: ManagerCtx): void {
 
     // AI-native MCP 管理工具（mcp_*）：agent 面 = 面板写同一安装态。
     const mcpTools = createMcpTools({
-      listServers,
+      listServers: () => registry.listServers(),
       addServer: (config, opts) => {
-        const id = addServer(config, { ...opts, loadOverlayPatches })
+        const id = registry.addServer(config, opts)
         markConnecting(config.serverName)
         return id
       },
       updateServer: (id, config) => {
-        updateServer(id, config, { loadOverlayPatches })
+        registry.updateServer(id, config)
         markConnecting(config.serverName)
       },
-      deleteServer: id => deleteServer(id, { loadOverlayPatches }),
+      deleteServer: id => registry.deleteServer(id),
       setServerDisabled: (id, disabled) => {
-        setServerDisabled(id, disabled, { loadOverlayPatches })
+        registry.setServerDisabled(id, disabled)
         // 找到该 id 对应的 serverName 以清理 connecting 标记（禁用→不再连接中）。
         if (disabled) {
-          const row = listServers().find(r => r.id === id)
+          const row = registry.listServers().find(r => r.id === id)
           if (row !== undefined) clearConnecting(row.config.serverName)
         } else {
           // 启用：进入「连接中」宽限窗（loader HMR 重新挂载 mcp-client）。
-          const row = listServers().find(r => r.id === id)
+          const row = registry.listServers().find(r => r.id === id)
           if (row !== undefined) markConnecting(row.config.serverName)
         }
       },
@@ -174,7 +197,7 @@ export function apply(ctx: ManagerCtx): void {
           // GET /servers — 列出注册表 + 运行态工具数
           if (method === 'GET' && (path === '/api/mcp-manager/servers' || path === '/api/mcp-manager/servers/')) {
             const toolNames = (ctx.tools?.schemas() ?? []).map(s => s.name)
-            const servers = listServers().map(row => {
+            const servers = registry.listServers().map(row => {
               const prefix = `mcp__${row.config.serverName}__`
               const toolCount = row.disabled ? 0 : toolNames.filter(n => n.startsWith(prefix)).length
               return {
@@ -219,7 +242,7 @@ export function apply(ctx: ManagerCtx): void {
           // GET /status — 每个服务器的运行态状态
           if (method === 'GET' && (path === '/api/mcp-manager/status' || path === '/api/mcp-manager/status/')) {
             const toolNames = (ctx.tools?.schemas() ?? []).map(s => s.name)
-            const status = listServers().map(row => {
+            const status = registry.listServers().map(row => {
               const prefix = `mcp__${row.config.serverName}__`
               const toolCount = row.disabled ? 0 : toolNames.filter(n => n.startsWith(prefix)).length
               return {
@@ -242,7 +265,7 @@ export function apply(ctx: ManagerCtx): void {
               jsonRes(400, { ok: false, message: 'config is required' })
               return
             }
-            const id = addServer(parsed.config, { id: parsed.id, loadOverlayPatches })
+            const id = registry.addServer(parsed.config, { id: parsed.id })
             markConnecting(parsed.config.serverName)
             jsonRes(200, { ok: true, id, live: true, message: `server ${id} mounted via config HMR` })
             return
@@ -258,7 +281,7 @@ export function apply(ctx: ManagerCtx): void {
               jsonRes(400, { ok: false, message: 'config is required' })
               return
             }
-            updateServer(id, parsed.config, { loadOverlayPatches })
+            registry.updateServer(id, parsed.config)
             markConnecting(parsed.config.serverName)
             jsonRes(200, { ok: true, id, live: true, message: `server ${id} config replaced (HMR hot-swap)` })
             return
@@ -273,13 +296,13 @@ export function apply(ctx: ManagerCtx): void {
               jsonRes(400, { ok: false, message: 'disabled (boolean) is required' })
               return
             }
-            const ok = setServerDisabled(id, parsed.disabled, { loadOverlayPatches })
+            const ok = registry.setServerDisabled(id, parsed.disabled)
             if (!ok) {
               jsonRes(404, { ok: false, message: `server "${id}" not found` })
               return
             }
             // 禁用→清除 connecting 标记；启用→进入连接中宽限窗。
-            const row = listServers().find(r => r.id === id)
+            const row = registry.listServers().find(r => r.id === id)
             if (row !== undefined) {
               if (parsed.disabled) connectingSince.delete(row.config.serverName)
               else markConnecting(row.config.serverName)
@@ -291,7 +314,7 @@ export function apply(ctx: ManagerCtx): void {
           // DELETE /servers/<id> — 删除
           if (method === 'DELETE' && putMatch !== null) {
             const id = decodeURIComponent(putMatch[1]!)
-            const removed = deleteServer(id, { loadOverlayPatches })
+            const removed = registry.deleteServer(id)
             if (!removed) {
               jsonRes(404, { ok: false, message: `server "${id}" not found` })
               return
